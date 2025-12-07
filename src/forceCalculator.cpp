@@ -56,8 +56,9 @@ void ForceCalculator::initialize() {
 
     c_sound = sp.c_sound;
 
-    double A_inlet = 16.32 * 1e-4; // cm2 -> m2
-    double L_inlet = 10.0  * 1e-2; // cm -> m
+    double r_chamber = 15.0 * 1e-2; // 半径 15cm -> m
+    double A_inlet = M_PI * r_chamber * r_chamber;
+    double L_inlet = 50.0  * 1e-2; // cm -> m
     
     // 2. Subglottal Tract (声門下)
     double A_sub   = M_PI * std::pow((2.5 * 1e-2) / 2.0, 2.0);

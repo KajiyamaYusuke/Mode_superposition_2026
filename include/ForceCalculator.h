@@ -41,7 +41,7 @@ private:
 
     // 状態変数 (Previous step values)
     // Nsecg: subglottal sections, Nsecp: supraglottal sections
-    static const int Nsecg = 3; // 気管のセクション数
+    static const int Nsecg = 5; // 気管のセクション数
     static const int Nsecp = 10; // 声道のセクション数（適宜調整）
 
     std::vector<double> Uu; // Upstream (Trachea) flow
