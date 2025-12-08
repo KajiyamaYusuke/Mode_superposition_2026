@@ -311,7 +311,7 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
     
     // --- 1. 声門下 (Subglottal) の更新 ---
     
-    double rampDuration = 0.05; // 50msかけて立ち上げる
+    double rampDuration = 0.075; // 50msかけて立ち上げる
     double rampFactor = 1.0;
     
     if (t < rampDuration) {
