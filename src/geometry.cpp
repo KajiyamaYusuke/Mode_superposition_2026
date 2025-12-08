@@ -399,7 +399,7 @@ void Geometry::surfExtractFromNAS(const std::string& nasFile, int nsurfl_param, 
     for (auto& q : quads)
         uniqueNodes.insert(q.begin(), q.end());
     
-    std::cout<<"uniquenodes"<<uniqueNodes.size();
+    std::cout<<"uniquenodes="<<uniqueNodes.size()<<"\n";
 
     // 座標付きで並べ替え用にベクトル化
     struct NodeRef { double x, y, z; };

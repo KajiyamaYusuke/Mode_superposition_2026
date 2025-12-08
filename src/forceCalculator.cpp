@@ -56,18 +56,19 @@ void ForceCalculator::initialize() {
 
     c_sound = sp.c_sound;
 
-    double r_chamber = 15.0 * 1e-2; // 半径 15cm -> m
+    double r_chamber = 16.0 * 1e-2; // 半径 15cm -> m
     double A_inlet = M_PI * r_chamber * r_chamber;
     double L_inlet = 50.0  * 1e-2; // cm -> m
     
     // 2. Subglottal Tract (声門下)
-    double A_sub   = M_PI * std::pow((2.5 * 1e-2) / 2.0, 2.0);
-    double L_sub   = 25.0  * 1e-2;
+    double A_sub   = M_PI * std::pow((1.6 * 1e-2) / 2.0, 2.0);
+    double L_sub   = 46.0  * 1e-2;
     int    N_sub   = Nsecg; // param.txt の section数
 
     // 3. Vocal Tract (声道)
-    double A_vt    = 2.839 * 1e-4;
-    double L_vt    = 0;
+    double r_tract = 0.8 * 1e-2; // 半径 15cm -> m
+    double A_vt  = M_PI * r_tract * r_tract;
+    double L_vt    = 17.0 * 1e-2;
        int N_vt    = 10; // param.txt の section数 (Nsecpで使用)
 
     // --- インピーダンス計算 (L = rho*l/A, C = V / (rho*c^2) = l*A / (rho*c^2)) ---
@@ -310,7 +311,7 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
     
     // --- 1. 声門下 (Subglottal) の更新 ---
     
-    double rampDuration = 0.05; // 50msかけて立ち上げる
+    double rampDuration = 0.075; // 50msかけて立ち上げる
     double rampFactor = 1.0;
     
     if (t < rampDuration) {
