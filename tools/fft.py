@@ -2,23 +2,30 @@ import numpy as np
 from scipy.fft import fft, fftfreq
 import matplotlib.pyplot as plt
 
-# --- 1. load data ---
+# --- 1. データの読み込み ---
 harea = np.loadtxt("../output/area.dat")
-steps = harea[:, 0]
+# steps列は20飛ばしになっているため時間計算には使いません
 areas = harea[:, 1:]
 
-# --- 2. 最小断面積の時系列を作る ---
+# --- 2. 最小断面積の時系列 ---
 row_min = np.min(areas, axis=1)
 
-# --- 3. 時間軸 ---
-dt = 0.0002                # 1ステップ=0.0002秒
-fs = 1/dt                  # サンプリング周波数 (5000 Hz)
-t = steps * dt             # 時間配列
+# --- 3. 正しい時間軸の作成 ---
+# 1行が進むごとに 0.0002秒 経過すると仮定
+dt = 0.0002
+fs = 1 / dt  # 5000 Hz
+N_total = len(row_min)
+t = np.arange(N_total) * dt  # 行数基準で時間を再構築
 
-# --- 4. 必要なら区間抽出 ---
+# --- 4. 分析区間の抽出 ---
+# データ後半の安定した区間 (0.15s - 0.30s) を使用
 mask = (t >= 0.15) & (t <= 0.30)
 y = row_min[mask]
 t_seg = t[mask]
+
+# データ点数の確認 (これ重要です！)
+print(f"解析データ点数: {len(y)} 点") 
+# → 正しくは750点前後になります。30〜40点しかない場合は設定ミスです。
 
 # --- 5. DC成分除去 ---
 y = y - np.mean(y)
@@ -28,17 +35,33 @@ N = len(y)
 Y = np.abs(fft(y))
 freqs = fftfreq(N, d=dt)
 
-# 正の周波数のみ
+# 正の周波数のみ抽出
 mask2 = freqs > 0
 freqs = freqs[mask2]
 Y = Y[mask2]
 
-# --- 7. 最大ピーク ---
-peak_freq = freqs[np.argmax(Y)]
-print("主要周波数:", peak_freq, "Hz")
+# --- 7. ピーク検出 ---
+peak_idx = np.argmax(Y)
+peak_freq = freqs[peak_idx]
+print(f"主要周波数: {peak_freq:.2f} Hz")
 
-# --- 8. debug plot ---
-plt.plot(freqs, Y)
-plt.xlim(0, 1000)  # 声帯のF0はだいたい0〜500Hz
+# --- 8. プロット ---
+plt.figure(figsize=(10, 6))
+
+plt.subplot(2, 1, 1)
+plt.plot(t_seg, y)
+plt.title("Waveform (0.15s - 0.30s)")
+plt.xlabel("Time [s]")
+plt.ylabel("Min Area")
 plt.grid()
+
+plt.subplot(2, 1, 2)
+plt.plot(freqs, Y)
+plt.xlim(0, 500)
+plt.title(f"Spectrum (Peak: {peak_freq:.2f} Hz)")
+plt.xlabel("Frequency [Hz]")
+plt.ylabel("Magnitude")
+plt.grid()
+
+plt.tight_layout()
 plt.show()
