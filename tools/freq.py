@@ -12,7 +12,7 @@ x = labels * 1e-5  # 秒
 row_min = np.min(values, axis=1)
 
 t_start = 0.15
-t_end   = 0.20
+t_end   = 0.3
 idx = np.where((x >= t_start) & (x <= t_end))[0]
 
 x_seg = x[idx]
@@ -39,7 +39,7 @@ peak_freq = xf[np.argmax(yf)]
 print(f"FFTでの主要周波数: {peak_freq:.2f} Hz")
 
 # 4. ピーク検出（スムーズ化波形で）
-peaks, _ = find_peaks(row_min_smooth, prominence=0.001, distance=int(fs/peak_freq/2))
+peaks, _ = find_peaks(row_seg_smooth, prominence=0.001, distance=int(fs/peak_freq/2))
 peak_times = x_seg[peaks]
 periods = np.diff(peak_times)
 avg_period = np.mean(periods)
