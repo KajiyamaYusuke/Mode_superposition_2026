@@ -30,15 +30,25 @@ print(f"解析データ点数: {len(y)} 点")
 # --- 5. DC成分除去 ---
 y = y - np.mean(y)
 
+# 目標の分解能（Hz）
+target_resolution = 0.1
+
+# 必要なデータ点数 = サンプリング周波数 / 目標分解能
+# または、必要な時間長 / サンプリング間隔
+# dt = 0.0002 [s]
+N_padded = int(1 / (dt * target_resolution)) 
+# 例: 1 / (0.0002 * 0.1) = 50000点
+
+# n引数に大きな値を指定してFFTを実行
+Y_padded = np.abs(fft(y, n=N_padded))
+freqs_padded = fftfreq(N_padded, d=dt)
 # --- 6. FFT ---
-N = len(y)
-Y = np.abs(fft(y))
-freqs = fftfreq(N, d=dt)
+
 
 # 正の周波数のみ抽出
-mask2 = freqs > 0
-freqs = freqs[mask2]
-Y = Y[mask2]
+mask2 = freqs_padded > 0
+freqs = freqs_padded[mask2]
+Y = Y_padded[mask2]
 
 # --- 7. ピーク検出 ---
 peak_idx = np.argmax(Y)
