@@ -109,7 +109,7 @@ void ForceCalculator::initialize() {
               << ", nModes=" << nModes
               << ", nxsup=" << nxsup 
               << ", L_sub=" << L_sub
-              << ", L_vt=" << L_sub
+              << ", L_vt=" << L_vt
               << std::endl;
 }
 
