@@ -63,6 +63,8 @@ private:
     double La, Ca, Ra, Lr, Rr;   // 声道系定数
     double lg; // 声門長 (depth)
 
+    bool hasVocalTract;
+
     // --- 既存の参照 ---
     const Geometry& geom;
     const ModeData& modeData;

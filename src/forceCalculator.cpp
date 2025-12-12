@@ -66,10 +66,11 @@ void ForceCalculator::initialize() {
     int    N_sub   = Nsecg; // param.txt の section数
 
     // 3. Vocal Tract (声道)
-    double A_vt    = 2.839 * 1e-4;
+    double A_vt    = 0;
     double L_vt    = 0;
        int N_vt    = 10; // param.txt の section数 (Nsecpで使用)
-
+    const double A_vt_thresh = 1e-12;
+    hasVocalTract = (L_vt > 1e-6) && (A_vt > A_vt_thresh);
     // --- インピーダンス計算 (L = rho*l/A, C = V / (rho*c^2) = l*A / (rho*c^2)) ---
     
     // Inlet parameters (Lui, Cui)
@@ -86,7 +87,13 @@ void ForceCalculator::initialize() {
     alpha2 = 1.6e-3*sp.ps+0.6;
     beta = 1.125e-4 * sp.ps + 0.1375;
 
-    R2 = alpha1/(A_vt*A_vt) * std::sqrt(rho*mu*c_sound);
+    // safe R2
+    if (A_vt > A_vt_thresh) {
+        R2 = alpha1 / (A_vt * A_vt) * std::sqrt(rho * mu * c_sound);
+    } else {
+        R2 = 0.0; // no vocal tract resistance contribution
+    }
+
     if (L_vt > 1e-6) {
         double dx_vt = L_vt / std::max(1, Nsecp); 
         La = rho * dx_vt / A_vt;
@@ -392,7 +399,7 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
     // --- 3. 声道 (Vocal Tract) の更新 ---
     // 圧力更新 Pd[0]...
 
-    if(Lr < 1e-8){
+    if(!hasVocalTract ){
         for (int i = 0; i < Nsecp; i++) {
             Pd[i] = 0.0;     // 圧力ゼロ（大気）
             Ud[i] = currentUg; // 流量はすべて Ug と同じ
