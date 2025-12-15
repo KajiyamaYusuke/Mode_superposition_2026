@@ -12,7 +12,7 @@ x = labels * 1e-5  # 秒
 row_min = np.min(values, axis=1)
 
 t_start = 0.1
-t_end   = 0.2
+t_end   = 0.25
 idx = np.where((x >= t_start) & (x <= t_end))[0]
 
 x_seg = x[idx]

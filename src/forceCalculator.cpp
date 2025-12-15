@@ -173,8 +173,8 @@ void ForceCalculator::calcForce(double t, int n) {
             for (int i = 1; i < geom.nxsup; i++) {
                 double dx = std::abs(geom.points[geom.surfp[i][ int(nsurfz/2)]].x - geom.points[geom.surfp[i-1][int(nsurfz/2)]].x);
                 double h  = (state.harea[i] + state.harea[i-1]) / (2.0 * lg);
-                double h_prev = std::max(state.harea[i-1], 1e-6);
-                double h_curr = std::max(state.harea[i], 1e-6);
+                double h_prev = std::max(state.harea[i-1], 1e-3);
+                double h_curr = std::max(state.harea[i], 1e-3);
 
                 double Ugm = currentUg*1e6;
 
