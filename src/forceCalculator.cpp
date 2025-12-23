@@ -269,7 +269,7 @@ void ForceCalculator::contactForce() {
 
             double f_contact = sp.kc1 * omg2 * pen * (1.0 + sp.kc2 * omg2 * pen * pen);
 
-            double f_damp =  sp.kc3 * pen * ydot;
+            double f_damp =  sp.kc3 * ydot;
 
             double f_total = (f_contact + f_damp) * geom.sarea[i][j] * 1e-6;
 
@@ -283,28 +283,49 @@ void ForceCalculator::contactForce() {
 }
 
 void ForceCalculator::calcDis() {
-
     contactFlag = false;
 
-    // 単位質量の仮定
-    double mass = sp.mass;
+    // 固有角振動数（スケーリング用）
+    double omg1 = 2.0 * M_PI * modeData.frequencies[0];
+    double omg2 = omg1 * omg1;
 
-    for (int i = 1; i < nxsup; ++i) {            // 2..nxsup (0-indexなので1スタート)
-        for (int j = 1; j < geom.nsurfz - 1; ++j) { 
+    for (int i = 1; i < nxsup; ++i) {
+        for (int j = 1; j < geom.nsurfz - 1; ++j) {
+            
+            // 【重要】前の反復で足した分を一度引いてキャンセルする（二重加算防止）
+            fy[i][j] -= fdis[i][j]; 
             fdis[i][j] = 0.0;
 
             int pid = geom.surfp[i][j];
             if (pid < 0) continue;
 
-            double v_now = state.disp[pid].uy;
-            double v_next = state.predictedDisp[pid].ufy;           // Runge-Kuttaで予測した変位
-            
+            // ループ内で更新された「最新の予測位置」を使う
+            double y_curr = state.predictedDisp[pid].ufy; 
+            double y_wall = geom.ymid[j];
 
-            if (v_now <= geom.ymid[j] && v_next > geom.ymid[j]) {
-                double vc = (v_next - v_now) / sp.dt; // mm/s -> m/s は必要なら換算
-                vc *= 1e-3;
+            // 判定：壁より向こう側にいるか？（常時チェック）
+            if (y_curr > y_wall) {
+                
+                // 1. めり込み量 (m)
+                double pen = (y_curr - y_wall) * 1e-3; // mm -> m
 
-                fdis[i][j] = -mass * vc / (sp.dt * geom.nPoints);
+                // 2. 速度 (m/s) : (現在の予測位置 - 1ステップ前の位置) / dt
+                double y_prev = state.disp[pid].uy;
+                double vel = (y_curr - y_prev) / sp.dt * 1e-3; 
+
+                // 3. 力の計算（ここで kc1, kc3 を使う！）
+                // バネ力（線形）: kc1 * omg2 * pen
+                double non_linear_term = 1.0 + sp.kc2 * omg2 * pen * pen; 
+                double f_spring = sp.kc1 * omg2 * pen * non_linear_term;
+
+                // --- 3. 減衰力（これはそのまま） ---
+                double f_damp = sp.kc3 * vel; 
+
+                // --- 4. 合力 ---
+                double f_total = -(f_spring + f_damp) * geom.sarea[i][j] * 1e-6;
+
+                // 力を保存・適用
+                fdis[i][j] = f_total;
                 fy[i][j] += fdis[i][j];
 
                 contactFlag = true;

@@ -124,7 +124,7 @@ void Simulation::run() {
             }
         }
 
-        fCalc.contactForce();
+        //fCalc.contactForce();
 
 
 
