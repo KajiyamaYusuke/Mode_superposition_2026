@@ -11,7 +11,7 @@
 
 inline bool isSamePointRounded(double x1, double y1, double z1,
                                double x2, double y2, double z2,
-                               double scale = 1e2) {
+                               double scale = 90) {
     return (std::llround(x1*scale) == std::llround(x2*scale)) &&
            (std::llround(y1*scale) == std::llround(y2*scale)) &&
            (std::llround(z1*scale) == std::llround(z2*scale));

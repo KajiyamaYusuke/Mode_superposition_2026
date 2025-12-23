@@ -269,7 +269,7 @@ void ForceCalculator::contactForce() {
 
             double f_contact = sp.kc1 * omg2 * pen * (1.0 + sp.kc2 * omg2 * pen * pen);
 
-            double f_damp =  sp.kc3 * ydot;
+            double f_damp =  sp.kc3 * pen * ydot;
 
             double f_total = (f_contact + f_damp) * geom.sarea[i][j] * 1e-6;
 
