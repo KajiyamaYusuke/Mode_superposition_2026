@@ -207,6 +207,9 @@ void Simulation::run() {
             // calculate dissipation force for contact
             fCalc.contactFlag = false;
             fCalc.calcDis();
+            if (fCalc.contactFlag && fCalc.max_force_diff < 1.0e-5) { 
+                break; 
+            }
 
             if (!fCalc.contactFlag) break;  // contactFlg == false の場合はループを抜ける
         }

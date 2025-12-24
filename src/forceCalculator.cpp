@@ -288,12 +288,14 @@ void ForceCalculator::calcDis() {
     // 固有角振動数（スケーリング用）
     double omg1 = 2.0 * M_PI * modeData.frequencies[0];
     double omg2 = omg1 * omg1;
+    max_force_diff = 0.0;
 
     for (int i = 1; i < nxsup; ++i) {
         for (int j = 1; j < geom.nsurfz - 1; ++j) {
             
             // 【重要】前の反復で足した分を一度引いてキャンセルする（二重加算防止）
             fy[i][j] -= fdis[i][j]; 
+            double old_force = fdis[i][j];
             fdis[i][j] = 0.0;
 
             int pid = geom.surfp[i][j];
@@ -323,6 +325,11 @@ void ForceCalculator::calcDis() {
 
                 // --- 4. 合力 ---
                 double f_total = -(f_spring + f_damp) * geom.sarea[i][j] * 1e-6;
+
+                double diff = std::abs(f_total - old_force);
+                if (diff > max_force_diff) {
+                    max_force_diff = diff;
+                }
 
                 // 力を保存・適用
                 fdis[i][j] = f_total;

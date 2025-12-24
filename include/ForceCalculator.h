@@ -33,6 +33,7 @@ public:
     bool contactFlag;
 
     double currentUg;
+    double max_force_diff;
 
 private:
     // --- 新規追加: 圧縮性流体モデル用の変数 ---
