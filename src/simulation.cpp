@@ -13,15 +13,9 @@ void Simulation::initialize() {
     params.loadFromFile("../input/param.txt", err );
 
     geom.loadFromVTK("../input/M5/M5_mode_kawahara_mesh7_soft.vtu");
-    //geom.loadFromVTK("../input/M5/M5_mode_T2.vtu");
-    //geom.loadFromVTK("../input/old/no_mem_mode.vtu");
 
-    //geom.surfExtractFromNAS("/home/kajiyama/code/simulation/input/surface_data_renewal.nas",13,18);
     geom.surfExtractFromNAS("../input/M5/M5_surface_kawahara_mesh7_soft.nas",64,69);
-    //geom.surfExtractFromNAS("../input/M5/M5_surface_T2.nas",68,70);
-    //geom.surfExtractFromNAS("/home/kajiyama/code/simulation/input/surface_data_old_c.nas",21,30);
 
-    //geom.surfExtract("/home/kajiyama/code/simulation/input/old/surface.txt", 20);
     geom.surfArea();
     geom.print();
  
@@ -33,9 +27,9 @@ void Simulation::initialize() {
     mdata.initialize(params.nmode, geom);
 
     mdata.loadFromVTU("../input/M5/M5_mode_kawahara_mesh7_soft.vtu", geom);
-    //mdata.loadFromVTU_old("../input/old/no_mem_mode.vtu", geom);
+
     mdata.loadFreqDamping("../input/M5/M5_freq_kawahara_mesh7_soft.txt");
-    //mdata.loadFreqDamping("../input/old/no_mem_frequency.txt");
+
 
 
     mdata.normalizeModes( params.mass, geom);

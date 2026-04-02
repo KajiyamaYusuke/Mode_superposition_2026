@@ -74,11 +74,10 @@ void ForceCalculator::initialize() {
     // --- インピーダンス計算 (L = rho*l/A, C = V / (rho*c^2) = l*A / (rho*c^2)) ---
     
     // Inlet parameters (Lui, Cui)
-    // Fortranでは Lui = rho * L_inlet / A_inlet など
     Lui = rho * L_inlet / (2*A_inlet);
     Cui = L_inlet * A_inlet / (rho * c_sound * c_sound);
 
-    // Subglottal parameters (Lu, Cu) - 1セクションあたり
+    // Subglottal parameters (Lu, Cu) 
     double dx_sub = L_sub / N_sub;
     Lu = rho * dx_sub / A_sub;
     Cu = dx_sub * A_sub / (rho * c_sound * c_sound);
@@ -103,7 +102,6 @@ void ForceCalculator::initialize() {
         Rr = alpha2*rho*c_sound/(9*M_PI*M_PI*A_vt);
     } else {
         // 声道がない場合、計算に使わないがゼロ除算回避のため安全な値を入れておく
-        // または calcFlowStep で分岐する
         La = 1e-1; // ダミー
         Ca = 1.0e30; // 非常に大きくすることで圧力変動をゼロにする(大気開放)
         Lr = 0.0;
@@ -125,7 +123,6 @@ void ForceCalculator::calcForce(double t, int n) {
     int nsurfz = geom.nsurfz;
     int nxsup  = geom.nxsup;
 
-    // まず全てゼロクリア
     fx.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
     fy.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
     fz.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
@@ -241,51 +238,51 @@ void ForceCalculator::f2mode() {
      //std::cout<<"|disp[1]= "<<state.disp[11].ux<<std::endl;
 }
 
-void ForceCalculator::contactForce() {
+// void ForceCalculator::contactForce() {
 
-    contactFlag = false;
-    double omg1 = 2.0 * M_PI * modeData.frequencies[0]; // 1次固有振動数
-    double omg2 = omg1 * omg1;
+//     contactFlag = false;
+//     double omg1 = 2.0 * M_PI * modeData.frequencies[0]; // 1次固有振動数
+//     double omg2 = omg1 * omg1;
 
-    for (int i = 0; i < geom.nxsup; ++i) {           // nxsup は計算範囲
-        for (int j = 1; j < geom.nsurfz - 1; ++j) {  // 2..nsurfz-1 (0-index)
-            int node = geom.surfp[i][j];
+//     for (int i = 0; i < geom.nxsup; ++i) {           // nxsup は計算範囲
+//         for (int j = 1; j < geom.nsurfz - 1; ++j) {  // 2..nsurfz-1 (0-index)
+//             int node = geom.surfp[i][j];
 
-            double y     = state.disp[node].uy;        // 現在変位
-            double ydot  = state.vel[node].uy;         // 現在速度
-            double ymid  = geom.ymid[j];
-            double yhat  = y + sp.dt * ydot;           // 予測位置
+//             double y     = state.disp[node].uy;        // 現在変位
+//             double ydot  = state.vel[node].uy;         // 現在速度
+//             double ymid  = geom.ymid[j];
+//             double yhat  = y + sp.dt * ydot;           // 予測位置
 
 
-            // 接触状態を判定
-            bool contact_now    = (y > ymid);          // 現時点で接触
-            bool contact_future = (yhat > ymid);       // 次ステップで接触
+//             // 接触状態を判定
+//             bool contact_now    = (y > ymid);          // 現時点で接触
+//             bool contact_future = (yhat > ymid);       // 次ステップで接触
 
-            if (!contact_now) {
-                continue;
-            }
+//             if (!contact_now) {
+//                 continue;
+//             }
 
-            double pen = (ymid - y) * 1e-3; 
+//             double pen = (ymid - y) * 1e-3; 
 
-            double f_contact = sp.kc1 * omg2 * pen * (1.0 + sp.kc2 * omg2 * pen * pen);
+//             double f_contact = sp.kc1 * omg2 * pen * (1.0 + sp.kc2 * omg2 * pen * pen);
 
-            double f_damp =  sp.kc3 * pen * ydot;
+//             double f_damp =  sp.kc3 * pen * ydot;
 
-            double f_total = (f_contact + f_damp) * geom.sarea[i][j] * 1e-6;
+//             double f_total = (f_contact + f_damp) * geom.sarea[i][j] * 1e-6;
 
-            if (f_total > 0.0) { f_total = 0.0; }           
+//             if (f_total > 0.0) { f_total = 0.0; }           
 
-            fy[i][j] += f_total;
-            contactFlag = true;
-        }
-    } 
+//             fy[i][j] += f_total;
+//             contactFlag = true;
+//         }
+//     } 
 
-}
+// }
 
 void ForceCalculator::calcDis() {
     contactFlag = false;
 
-    // 固有角振動数（スケーリング用）
+    // 固有角振動数
     double omg1 = 2.0 * M_PI * modeData.frequencies[0];
     double omg2 = omg1 * omg1;
     max_force_diff = 0.0;
@@ -293,7 +290,7 @@ void ForceCalculator::calcDis() {
     for (int i = 1; i < nxsup; ++i) {
         for (int j = 1; j < geom.nsurfz - 1; ++j) {
             
-            // 【重要】前の反復で足した分を一度引いてキャンセルする（二重加算防止）
+            // 前の反復で足した分を一度引いてキャンセルする
             fy[i][j] -= fdis[i][j]; 
             double old_force = fdis[i][j];
             fdis[i][j] = 0.0;
@@ -301,11 +298,11 @@ void ForceCalculator::calcDis() {
             int pid = geom.surfp[i][j];
             if (pid < 0) continue;
 
-            // ループ内で更新された「最新の予測位置」を使う
+            // ループ内で更新された予測位置
             double y_curr = state.predictedDisp[pid].ufy; 
             double y_wall = geom.ymid[j];
 
-            // 判定：壁より向こう側にいるか？（常時チェック）
+            //壁より向こう側にいるか
             if (y_curr > y_wall) {
                 
                 // 1. めり込み量 (m)
@@ -315,12 +312,12 @@ void ForceCalculator::calcDis() {
                 double y_prev = state.disp[pid].uy;
                 double vel = (y_curr - y_prev) / sp.dt * 1e-3; 
 
-                // 3. 力の計算（ここで kc1, kc3 を使う！）
+                // 3. 力の計算
                 // バネ力（線形）: kc1 * omg2 * pen
                 double non_linear_term = 1.0 + sp.kc2 * omg2 * pen * pen; 
                 double f_spring = sp.kc1 * omg2 * pen * non_linear_term;
 
-                // --- 3. 減衰力（これはそのまま） ---
+                // --- 3. 減衰力 ---
                 double f_damp = sp.kc3 * vel; 
 
                 // --- 4. 合力 ---
@@ -354,7 +351,6 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
     }
 
     // --- ランプ適用 ---
-    // sp.ps (固定パラメータ) に rampFactor をかけて「現在の肺圧」を作る
     double currentLungPressure = sp.ps * rampFactor;
 
     double ug = currentUg;
@@ -370,11 +366,6 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
     Pu[Nsecg+1] +=  ( previousUg - Ud[0]);
 
 
-    // 流量の更新 (運動量保存: dU/dt = (1/L) * (Pin - Pout - R*U))
-    // Uu[1]: Inlet -> 1st Section
-    // Fortran: Uu(1)=Uu(1)-dt/Lui*(dt/Cui*Pu(1)-Ps) 
-    // これは「P(1) - Ps」の形。
-    // C++:
     Uu[0]  -= dt / Lui * ( (dt / Cui * Pu[0]) - currentLungPressure );
 
     // Fortran: Uu(2)=Uu(2)-dt/(Lui+Lu)*(dt/Cu*Pu(2)-dt/Cui*Pu(1)+R2*Uu(2))
@@ -393,12 +384,12 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
 
         double Lg1 = rho *  0.5 * lis / min_area_m2;
         double Rk1 = beta * rho / ( min_area_m2 * min_area_m2); // Bernoulli (係数調整)
-        // Fortranでは beta*rho... とある。betaが1.0以上なら損失
+
         double Rv1 = 12.0 * mu * lis * lg_m * lg_m / pow(min_area_m2, 3.0);
 
         // 駆動圧: 声門直下(Pu[last]) - 声道入口(Pd[0])
-        double Ug_old = previousUg; // これを適切に保持しておく
-        double Ug_guess = currentUg; // or previous guess
+        double Ug_old = previousUg; 
+        double Ug_guess = currentUg; 
 
         // Newton-Raphson
         for(int k=0; k<100; ++k) { // ループ回数Fortranは100
@@ -420,7 +411,6 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
         currentUg = 0.0;
     }
 
-    // currentPg (声門下圧として外力計算に使う値)
     currentPg = dt / Cu * Pu[Nsecg];
 
 
@@ -429,7 +419,7 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
 
     if(!hasVocalTract ){
         for (int i = 0; i < Nsecp; i++) {
-            Pd[i] = 0.0;     // 圧力ゼロ（大気）
+            Pd[i] = 0.0;     // 圧力ゼロ
             Ud[i] = currentUg; // 流量はすべて Ug と同じ
         }
     }else{
@@ -440,7 +430,7 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
 
         // 流量更新 Ud[0]...
         for(int i=0; i<Nsecp-1; ++i) {
-            Ud[i] += (dt / La) * (Pd[i] - Pd[i+1]); // 抵抗Raがあれば追加
+            Ud[i] += (dt / La) * (Pd[i] - Pd[i+1]);
         }
     }
     

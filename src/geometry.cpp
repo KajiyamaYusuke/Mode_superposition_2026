@@ -100,7 +100,7 @@ void Geometry::loadFromVTK(const std::string& filename) {
         offsets = offsetsBuffer;
     } 
     else if (!typesBuffer.empty()) {
-        // ★ 新しい処理 (offsets がなく、types がある場合) ★
+        // (offsets がなく、types がある場合)
         nCells = static_cast<int>(typesBuffer.size());
         connect.resize(nCells);
         offsets.resize(nCells);

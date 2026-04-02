@@ -36,7 +36,7 @@ public:
         // サンプリング周波数
         uint32_t sampleRate = static_cast<uint32_t>(std::round(1.0 / dt));
         
-        // データの最大絶対値を見つけて正規化（ノーマライズ）する
+        // データの最大絶対値を見つけて正規化
         double maxVal = 0.0;
         for (double v : data) {
             maxVal = std::max(maxVal, std::abs(v));
@@ -48,7 +48,7 @@ public:
         pcmData.reserve(data.size());
 
         // double -> int16_t (-32767 ~ 32767) に変換
-        // 音割れしないように最大値で割ってスケーリングします
+        
         double scale = 32760.0 / maxVal; 
         
         for (double v : data) {

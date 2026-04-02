@@ -19,31 +19,26 @@ public:
     void f2mode();
     void outputForceVectors(int step) const;
 
-    // 変数へのアクセス用（必要に応じて）
-    const std::vector<double>& getPsurf() const { return psurf; }
 
-public:
-    // --- 既存のメンバ ---
     std::vector<std::vector<double>> fx, fy, fz;
     std::vector<double> fi;
     std::vector<std::vector<double>> fdis; // dissipation force
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
-    std::vector<double> minHarea;  // Minimum area history
+    std::vector<double> minHarea;  // Minimum area 
     bool contactFlag;
 
     double currentUg;
     double max_force_diff;
 
 private:
-    // --- 新規追加: 圧縮性流体モデル用の変数 ---
     // Ishizaka & Flanagan (1972) モデル用
-    void calcFlowStep(double t, double dt, double current_min_area); // FortranのcalcFlow相当
+    void calcFlowStep(double t, double dt, double current_min_area); 
 
     // 状態変数 (Previous step values)
     // Nsecg: subglottal sections, Nsecp: supraglottal sections
     static const int Nsecg = 3; // 気管のセクション数
-    static const int Nsecp = 10; // 声道のセクション数（適宜調整）
+    static const int Nsecp = 10; // 声道のセクション数
 
     std::vector<double> Uu; // Upstream (Trachea) flow
     std::vector<double> Pu; // Upstream (Trachea) pressure

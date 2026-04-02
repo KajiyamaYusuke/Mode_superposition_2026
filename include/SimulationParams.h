@@ -15,7 +15,6 @@
 #include <iostream>
 
 /// Simulation parameters (読み取り専用の設定群)
-/// 単位や意味はコメントを参照してください。
 struct SimulationParams {
     // デフォルトコンストラクタ（メンバ初期化子で既に初期値を定義）
     SimulationParams() = default;
