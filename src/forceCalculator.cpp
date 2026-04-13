@@ -47,6 +47,9 @@ void ForceCalculator::initialize() {
     Ud.assign(Nsecp , 0.0);
     Pd.assign(Nsecp , 0.0);
 
+    harea.clear();
+    degree.clear();
+
     
     currentUg = 0.0;    
 
@@ -56,19 +59,18 @@ void ForceCalculator::initialize() {
 
     c_sound = sp.c_sound;
 
-    double r_chamber = 15.0 * 1e-2; // 半径 15cm -> m
-    double A_inlet = M_PI * r_chamber * r_chamber;
-    double L_inlet = 50.0  * 1e-2; // cm -> m
-    
+    double A_inlet = M_PI * sp.r_inlet * sp.r_inlet;
+    double L_inlet = sp.L_inlet;
+
     // 2. Subglottal Tract (声門下)
-    double A_sub   = M_PI * std::pow((2.5 * 1e-2) / 2.0, 2.0);
-    double L_sub   = 25.0  * 1e-2;
-    int    N_sub   = Nsecg; // param.txt の section数
+    double A_sub   = M_PI * sp.r_sub * sp.r_sub;
+    double L_sub   = sp.L_sub;
+    int    N_sub   = sp.N_sub; // param.txt の section数
 
     // 3. Vocal Tract (声道)
-    double A_vt    = 0;
-    double L_vt    = 0;
-       int N_vt    = 10; // param.txt の section数 (Nsecpで使用)
+    double A_vt    = sp.A_vt;
+    double L_vt    = sp.L_vt;
+       int N_vt    = sp.N_vt; // param.txt の section数 (Nsecpで使用)
     const double A_vt_thresh = 1e-12;
     hasVocalTract = (L_vt > 1e-6) && (A_vt > A_vt_thresh);
     // --- インピーダンス計算 (L = rho*l/A, C = V / (rho*c^2) = l*A / (rho*c^2)) ---
@@ -138,7 +140,7 @@ void ForceCalculator::calcForce(double t, int n) {
     if (sp.iforce == 1) {
         // ==== sin波加振 ====
 
-        minHarea[n] = *std::min_element(state.harea.begin(), state.harea.end());
+        minHarea[n] = *std::min_element(harea.begin(), harea.end());
         
         
         for (int i = 1; i < nxsup-1; i++) {
@@ -169,9 +171,9 @@ void ForceCalculator::calcForce(double t, int n) {
         if (minA > 1e-6 ) {
             for (int i = 1; i < geom.nxsup; i++) {
                 double dx = std::abs(geom.points[geom.surfp[i][ int(nsurfz/2)]].x - geom.points[geom.surfp[i-1][int(nsurfz/2)]].x);
-                double h  = (state.harea[i] + state.harea[i-1]) / (2.0 * lg);
-                double h_prev = std::max(state.harea[i-1], 1e-3);
-                double h_curr = std::max(state.harea[i], 1e-3);
+                double h  = (harea[i] + harea[i-1]) / (2.0 * lg);
+                double h_prev = std::max(harea[i-1], 1e-3);
+                double h_curr = std::max(harea[i], 1e-3);
 
                 double Ugm = currentUg*1e6;
 
@@ -204,9 +206,9 @@ void ForceCalculator::calcForce(double t, int n) {
                 double ds = std::sqrt(dx*dx + dy*dy);
                 double dz = 0.5 * (state.disp[pid_jp1].uz - state.disp[pid_jm1].uz);
 
-                fx[i][j] = psurf[i] * ds * dz * 1.0e-6 * std::cos(state.degree[1][i][j]) * std::sin(state.degree[0][i][j]);
-                fy[i][j] = -psurf[i] * ds * dz * 1.0e-6 * std::cos(state.degree[1][i][j]) * std::cos(state.degree[0][i][j]);
-                fz[i][j] = psurf[i] * ds * dz * 1.0e-6 * std::sin(state.degree[1][i][j]);
+                fx[i][j] = psurf[i] * ds * dz * 1.0e-6 * std::cos(degree[1][i][j]) * std::sin(degree[0][i][j]);
+                fy[i][j] = -psurf[i] * ds * dz * 1.0e-6 * std::cos(degree[1][i][j]) * std::cos(degree[0][i][j]);
+                fz[i][j] = psurf[i] * ds * dz * 1.0e-6 * std::sin(degree[1][i][j]);
 
             }
         }
@@ -279,6 +281,60 @@ void ForceCalculator::f2mode() {
 
 // }
 
+void ForceCalculator::calcArea() {
+    if (geom.nxsup < 2 || geom.nsurfz < 2) return;
+
+
+    // harea
+    harea.assign(geom.nxsup, 0.0);
+    for (int i = 0; i < geom.nxsup; ++i) {
+        double hi = 0.0;
+        for (int j = 0; j < geom.nsurfz-1; ++j) {
+            int pid1 = geom.surfp[i][j];
+            int pid2 = geom.surfp[i][j+1];
+
+            if (pid1 < 0 || pid2 < 0) continue;
+
+            double ztmp = std::abs(state.disp[pid2].uz - state.disp[pid1].uz);
+            double ytmp = geom.ymid[j] - 0.5 * (state.disp[pid2].uy + state.disp[pid1].uy);
+
+            if (ytmp < 0.0) ytmp = 0.0;
+            if (!std::isfinite(ytmp)) ytmp = 0.0;
+            if (!std::isfinite(ztmp)) ztmp = 0.0;
+
+            hi += 2.0 * ytmp * ztmp;
+        }
+
+        harea[i] = hi;
+        //std::cout<<"harea["<< 25 << "] = "<< harea[25]<<std::endl;
+    }
+
+    // degree
+    degree.assign(2, std::vector<std::vector<double>>(geom.nxsup, std::vector<double>(geom.nsurfz, 0.0)));
+
+    for (int i = 1; i < geom.nxsup-1; ++i) {
+        for (int j = 1; j < geom.nsurfz-1; ++j) {
+            int pid_left  = geom.surfp[i-1][j];
+            int pid_right = geom.surfp[i+1][j];
+            int pid_down  = geom.surfp[i][j-1];
+            int pid_up    = geom.surfp[i][j+1];
+
+            if (pid_left<0 || pid_right<0 || pid_down<0 || pid_up<0) continue;
+
+            double dx  = 0.5*(state.disp[pid_right].ux - state.disp[pid_left].ux);
+            double dy1 = 0.5*(state.disp[pid_right].uy - state.disp[pid_left].uy);
+            double dy2 = 0.5*(state.disp[pid_up].uy - state.disp[pid_down].uy);
+            double dz  = 0.5*(state.disp[pid_up].uz - state.disp[pid_down].uz);
+            
+            
+
+            if (dx != 0.0) degree[0][i][j] = std::atan(dy1/dx);
+            if (dz != 0.0) degree[1][i][j] = std::atan(dy2/dz);
+        }
+    }
+
+}
+
 void ForceCalculator::calcDis() {
     contactFlag = false;
 
@@ -299,7 +355,7 @@ void ForceCalculator::calcDis() {
             if (pid < 0) continue;
 
             // ループ内で更新された予測位置
-            double y_curr = state.predictedDisp[pid].ufy; 
+            double y_curr = state.predictedDisp[pid].uy; 
             double y_wall = geom.ymid[j];
 
             //壁より向こう側にいるか
@@ -442,12 +498,12 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
 }
 
 double ForceCalculator::findMinHarea() {
-    return *std::min_element(state.harea.begin(), state.harea.end());
+    return *std::min_element(harea.begin(), harea.end());
 }
 
 int ForceCalculator::findNsep(double minH) {
     for (int i = 1; i < geom.nxsup; i++) {
-        if (std::fabs(state.harea[i] - minH) < 1e-8 || state.harea[i] <= 0.0) {
+        if (std::fabs(harea[i] - minH) < 1e-8 || harea[i] <= 0.0) {
             return i+1;
         }
     }

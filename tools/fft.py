@@ -1,77 +1,97 @@
 import numpy as np
-from scipy.fft import fft, fftfreq
 import matplotlib.pyplot as plt
 
-# --- 1. データの読み込み ---
-harea = np.loadtxt("../output/area.dat")
-# steps列は20飛ばしになっているため時間計算には使いません
-areas = harea[:, 1:]
+import scienceplots
 
-# --- 2. 最小断面積の時系列 ---
-row_min = np.min(areas, axis=1)
+plt.style.use(['science','ieee', 'no-latex'])
 
-# --- 3. 正しい時間軸の作成 ---
-# 1行が進むごとに 0.0002秒 経過すると仮定
-dt = 0.0002
-fs = 1 / dt  # 5000 Hz
-N_total = len(row_min)
-t = np.arange(N_total) * dt  # 行数基準で時間を再構築
+# =========================
+# 設定
+# =========================
+filename = "../output/pressure_vt.dat"
+sim_dt = 1.0e-5
+output_interval = 5
+dt = sim_dt * output_interval
 
-# --- 4. 分析区間の抽出 ---
-# データ後半の安定した区間 (0.15s - 0.30s) を使用
-mask = (t >= 0.1) & (t <= 0.30)
-y = row_min[mask]
-t_seg = t[mask]
+# =========================
+# データ読み込みと解析
+# =========================
+data = np.loadtxt(filename, comments='#')
+pressure = data[:, 1]
 
-# データ点数の確認 (これ重要です！)
-print(f"解析データ点数: {len(y)} 点") 
-# → 正しくは750点前後になります。30〜40点しかない場合は設定ミスです。
+# 時間切り出し (0.15s - 0.4s)
+t_start = 0.1
+t_end   = 0.4
+start_idx = int(t_start / dt)
+end_idx   = int(t_end / dt)
 
-# --- 5. DC成分除去 ---
-y = y - np.mean(y)
+if end_idx > len(pressure):
+    end_idx = len(pressure)
 
-# 目標の分解能（Hz）
-target_resolution = 0.1
+valid_pressure = pressure[start_idx:end_idx]
 
-# 必要なデータ点数 = サンプリング周波数 / 目標分解能
-# または、必要な時間長 / サンプリング間隔
-# dt = 0.0002 [s]
-N_padded = int(1 / (dt * target_resolution)) 
-# 例: 1 / (0.0002 * 0.1) = 50000点
+# DC成分除去 & 窓関数
+valid_pressure = valid_pressure - np.mean(valid_pressure)
+window = np.hanning(len(valid_pressure))
+valid_pressure_windowed = valid_pressure * window
 
-# n引数に大きな値を指定してFFTを実行
-Y_padded = np.abs(fft(y, n=N_padded))
-freqs_padded = fftfreq(N_padded, d=dt)
-# --- 6. FFT ---
+# FFT計算
+N = len(valid_pressure)
+freq = np.fft.rfftfreq(N, d=dt)
+fft_val = np.fft.rfft(valid_pressure_windowed)
 
+# 振幅スペクトル (Linear)
+amplitude = np.abs(fft_val) / N * 2
 
-# 正の周波数のみ抽出
-mask2 = freqs_padded > 0
-freqs = freqs_padded[mask2]
-Y = Y_padded[mask2]
+# ★変更点1: 最大値を0dBにする正規化
+# 最大振幅を見つける
+max_linear_amp = np.max(amplitude)
+# 最大値で割ってから対数をとる (+1e-12は0除算防止)
+db_amplitude = 20 * np.log10(amplitude / max_linear_amp + 1e-12)
 
-# --- 7. ピーク検出 ---
-peak_idx = np.argmax(Y)
-peak_freq = freqs[peak_idx]
-print(f"主要周波数: {peak_freq:.2f} Hz")
+# --- F0検出ロジック (変更なし) ---
+mask = freq > 20
+masked_freq = freq[mask]
+masked_amp = amplitude[mask] # ピーク検出はLinear振幅で行うのが安全
 
-# --- 8. プロット ---
-plt.figure(figsize=(10, 6))
+f0 = 0
+if len(masked_amp) > 2:
+    is_peak = (masked_amp[1:-1] > masked_amp[:-2]) & (masked_amp[1:-1] > masked_amp[2:])
+    is_peak = np.r_[False, is_peak, False]
+    
+    peak_indices = np.where(is_peak)[0]
+    peak_freqs = masked_freq[peak_indices]
+    peak_amps = masked_amp[peak_indices]
+    
+    # 最大値の10% (-20dB) を閾値とする
+    threshold = 0.1 * max_linear_amp 
+    significant_peaks_idx = np.where(peak_amps > threshold)[0]
+    
+    if len(significant_peaks_idx) > 0:
+        first_peak_idx = significant_peaks_idx[0]
+        f0 = peak_freqs[first_peak_idx]
 
-plt.subplot(2, 1, 1)
-plt.plot(t_seg, y)
-plt.title("Waveform (0.15s - 0.30s)")
-plt.xlabel("Time [s]")
-plt.ylabel("Min Area")
-plt.grid()
+print(f"Detected Fundamental Frequency (F0): {f0:.2f} Hz")
 
-plt.subplot(2, 1, 2)
-plt.plot(freqs, Y)
-plt.xlim(0, 500)
-plt.title(f"Spectrum (Peak: {peak_freq:.2f} Hz)")
-plt.xlabel("Frequency [Hz]")
-plt.ylabel("Magnitude")
-plt.grid()
+# =========================
+# プロット
+# =========================
+fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
+
+# ★変更点2: 色を変更 (color='...')
+# 色の例: 'steelblue', 'firebrick', 'darkgreen', 'navy', 'black', 'orange'
+ax.plot(freq / 1000, db_amplitude, color='cornflowerblue',alpha = 0.8, label='Spectrum')
+
+#ax.set_title(f"Normalized Frequency Domain (F0 = {f0:.2f} Hz)")
+ax.set_xlabel("Frequency [kHz]", fontsize=20)
+ax.set_ylabel("Sound Pressure Level [dB]", fontsize=20) # ラベルも変更
+
+# 0dBが最大なので、上限を少し余裕を持たせて設定
+ax.set_ylim(-140, 5) 
+ax.set_xlim(0, 6)
+ax.tick_params(direction='in', labelsize=14, top=True, right=True)
+ax.grid(which='both', linestyle='--', alpha=0.7)
 
 plt.tight_layout()
+plt.savefig("result_fft.png", dpi=300)
 plt.show()

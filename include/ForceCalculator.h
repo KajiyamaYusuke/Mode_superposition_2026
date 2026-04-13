@@ -16,6 +16,7 @@ public:
     // 追加: 接触力計算など既存の関数
     void contactForce();
     void calcDis();
+    void calcArea();
     void f2mode();
     void outputForceVectors(int step) const;
 
@@ -26,6 +27,10 @@ public:
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
     std::vector<double> minHarea;  // Minimum area 
+
+    std::vector<double> harea;  // 流路断面積
+    std::vector<std::vector<std::vector<double>>> degree; // [2][nxsup][nsurfz]
+
     bool contactFlag;
 
     double currentUg;

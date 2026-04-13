@@ -17,8 +17,6 @@ public:
     std::vector<Displacement> vel;
     std::vector<Displacement> predictedDisp;
 
-    std::vector<double> harea;  // 流路断面積
-    std::vector<std::vector<std::vector<double>>> degree; // [2][nxsup][nsurfz]
 
     void initialize(int nPoints_, int nModes_, int nSteps, const Geometry& geom);
     void mode2uf(const Geometry& geom, const ModeData& modeData, int step);

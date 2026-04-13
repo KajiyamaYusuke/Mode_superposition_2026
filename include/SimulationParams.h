@@ -44,6 +44,18 @@ struct SimulationParams {
     double mu      = 1.81e-5;  // 動粘性係数 [Pa·s]（参考値）
     double c_sound = 340.0;
 
+    // --- 音響管（Vocal Tract / Subglottal）パラメータ ---
+    double L_inlet = 0.50;  // 吸気管の長さ [m]
+    double r_inlet = 0.15;  // 吸気管の半径 [m]
+
+    double L_sub   = 0.25;  // 声門下管の長さ [m]
+    double r_sub   = 0.0125;// 声門下管の半径 [m] (2.5cm / 2)
+    int    N_sub   = 3;     // 声門下管のセクション数 (Nsecgに対応)
+
+    double L_vt    = 0.25;   // 声道の長さ [m]
+    double A_vt    = 0.0125;  // 声道の断面積 [m^2]
+    int    N_vt    = 10;    // 声道のセクション数 (Nsecpに対応)
+
     // --- ファイル/ディレクトリパス ---
     fs::path inputDir  = ".";
     fs::path resultDir = "./results";

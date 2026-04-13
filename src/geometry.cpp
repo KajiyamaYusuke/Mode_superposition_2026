@@ -11,10 +11,12 @@
 
 inline bool isSamePointRounded(double x1, double y1, double z1,
                                double x2, double y2, double z2,
-                               double scale = 1e2) {
-    return (std::llround(x1*scale) == std::llround(x2*scale)) &&
-           (std::llround(y1*scale) == std::llround(y2*scale)) &&
-           (std::llround(z1*scale) == std::llround(z2*scale));
+                               double eps = 1e-3) {
+    // 2点間のユークリッド距離の2乗が eps の2乗より小さければ「同じ点」とみなす
+    double dx = x1 - x2;
+    double dy = y1 - y2;
+    double dz = z1 - z2;
+    return (dx * dx + dy * dy + dz * dz) < (eps * eps);
 }
 
 struct gridpoint {
@@ -236,14 +238,14 @@ void Geometry::surfExtract(const std::string &surfaceFile, int nsurfz_param) {
                     }
             }
             if (foundIndex == -1) {
-                std::cerr << "surfExtract: Warning - couldn't find point for ("
-                        << surflx[i] << ", " << surfly[i] << ", " << surflz[j] << ")\n";
+                //std::cerr << "surfExtract: Warning - couldn't find point for ("
+                //        << surflx[i] << ", " << surfly[i] << ", " << surflz[j] << ")\n";
             }
             surfp[i][j] = foundIndex;
         }
     }
 
-        std::ofstream ofs("../output/surfp_output.csv");
+    std::ofstream ofs("../output/surfp_output.csv");
     if (!ofs) {
         std::cerr << "Failed to open surfp_output.csv for writing.\n";
         return;
@@ -447,8 +449,8 @@ void Geometry::surfExtractFromNAS(const std::string& nasFile, int nsurfl_param, 
             }
 
             if (vtuIndex == -1) {
-                std::cerr << "Warning: couldn't find VTU point for (" 
-                        << n.x << ", " << n.y << ", " << n.z << ") \n";
+                // std::cerr << "Warning: couldn't find VTU point for (" 
+                //         << n.x << ", " << n.y << ", " << n.z << ") \n";
             }
 
             surfp[i][j] = vtuIndex;

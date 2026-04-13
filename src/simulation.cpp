@@ -12,9 +12,9 @@ void Simulation::initialize() {
 
     params.loadFromFile("../input/param.txt", err );
 
-    geom.loadFromVTK("../input/M5/M5_mode_kawahara_mesh7_soft.vtu");
+    geom.loadFromVTK("../input/M5_test/M5_mode_T4_d2_soft.vtu");
 
-    geom.surfExtractFromNAS("../input/M5/M5_surface_kawahara_mesh7_soft.nas",64,69);
+    geom.surfExtractFromNAS("../input/M5_test/M5_surface_T4_d2.nas",70,69);
 
     geom.surfArea();
     geom.print();
@@ -26,9 +26,9 @@ void Simulation::initialize() {
 
     mdata.initialize(params.nmode, geom);
 
-    mdata.loadFromVTU("../input/M5/M5_mode_kawahara_mesh7_soft.vtu", geom);
+    mdata.loadFromVTU("../input/M5_test/M5_mode_T4_d2_soft.vtu", geom);
 
-    mdata.loadFreqDamping("../input/M5/M5_freq_kawahara_mesh7_soft.txt");
+    mdata.loadFreqDamping("../input/M5_test/M5_freq_T4_d2_soft.txt");
 
 
 
@@ -106,7 +106,7 @@ void Simulation::run() {
 
 
         // 2. 断面積や角度を更新
-        state.calcArea(geom);
+        fCalc.calcArea();
 
 
         fCalc.calcForce(t, n);
@@ -127,7 +127,7 @@ void Simulation::run() {
             fp <<std::setw(4)<< n;
             for (int i = 0; i < geom.nxsup; ++i) {
                 
-                fa << " " <<std::setw(8)<< state.harea[i] << " ";
+                fa << " " <<std::setw(8)<< fCalc.harea[i] << " ";
                 fp << " " <<std::setw(8)<< fCalc.psurf[i] << " ";
             }
             fa << "\n";
@@ -141,18 +141,6 @@ void Simulation::run() {
             // 4. モード力への変換
             fCalc.f2mode();
 
-        // double rampDuration = 0.025; // 0.1秒かけて立ち上げ（状況により0.5など長くする）
-        // double rampFactor = 1.0;
-        
-        // if (t < rampDuration) {
-        //     rampFactor = t / rampDuration; 
-        //     // 例: t=0なら0倍, t=0.05なら0.5倍, t=0.1以上なら1.0倍
-        // }
-
-        // // 計算されたモード力すべてに係数をかける
-        // for(int i=0; i<mdata.nModes; ++i) {
-        //     fCalc.fi[i] *= rampFactor;
-        // }
 
             // 5. 時間積分（RK4）
 /*             for (int i = 0; i < mdata.nModes; i++) {
@@ -209,13 +197,13 @@ void Simulation::run() {
         }
 
         if (n%20 ==0){
-            fu << n *1e-5 << " "<<state.predictedDisp[nearestIdx].ufy - geom.points[nearestIdx].y<<" "<<state.predictedDisp[nearestIdx].ufx - geom.points[nearestIdx].x<< "\n";
+            fu << n *1e-5 << " "<<state.predictedDisp[nearestIdx].uy - geom.points[nearestIdx].y<<" "<<state.predictedDisp[nearestIdx].ux - geom.points[nearestIdx].x<< "\n";
         }
     
         state.uf2u();
 
         if( n % 20 == 0){
-            writeVTK(num, geom, state, "../result", 200);
+            //writeVTK(num, geom, state, "../result", 20);
             num++;
         }
         soundSignal.push_back(fCalc.currentUg);
