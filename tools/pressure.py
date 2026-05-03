@@ -11,7 +11,7 @@ values = harea[:, 1]
 
 x = labels * 1e-5
 
-plt.figure(figsize=(15,4))
+plt.figure(figsize=(10,4))
 plt.plot(x, values, linestyle='-', color='g')  # ← マーカーなし線だけ
 plt.xlabel('time')
 plt.ylabel('pressure')

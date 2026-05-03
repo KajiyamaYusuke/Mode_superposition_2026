@@ -12,6 +12,7 @@
 #endif
 
 #include <string>
+#include <bits/stdc++.h>
 #include <iostream>
 
 /// Simulation parameters (読み取り専用の設定群)
@@ -28,6 +29,7 @@ struct SimulationParams {
     double dt      = 1e-5;     // 時間刻み [s]
     double zeta    = 0.0;      // 減衰比
 
+
     // contact stiffness (例)。意味はプロジェクトに合わせて調整してください
     double kc1     = 1e6;
     double kc2     = 1e6;
@@ -36,7 +38,7 @@ struct SimulationParams {
     double mass    = 1.0;      // 単位はコード内で統一（例: kg）
 
     // --- 物理パラメータ（単位をコメント） ---
-    int    iforce  = 1;        // 力の種類フラグ（Fortran互換）
+    int    iforce  = 0;        // 力の種類フラグ（Fortran互換）
     double forcef  = 0.0;
     double famp    = 0.0;
     double ps      = 101325.0; // 静圧 [Pa]
@@ -45,15 +47,15 @@ struct SimulationParams {
     double c_sound = 340.0;
 
     // --- 音響管（Vocal Tract / Subglottal）パラメータ ---
-    double L_inlet = 0.50;  // 吸気管の長さ [m]
-    double r_inlet = 0.15;  // 吸気管の半径 [m]
+    double r_inlet = 8.0 * 1e-2;    // 8.0 cm
+    double L_inlet = 17.5 * 1e-2;   // 17.5 cm
 
-    double L_sub   = 0.25;  // 声門下管の長さ [m]
+    double L_sub   = 0.15;  // 声門下管の長さ [m]
     double r_sub   = 0.0125;// 声門下管の半径 [m] (2.5cm / 2)
     int    N_sub   = 3;     // 声門下管のセクション数 (Nsecgに対応)
 
-    double L_vt    = 0.25;   // 声道の長さ [m]
-    double A_vt    = 0.0125;  // 声道の断面積 [m^2]
+    double L_vt    = 17.5 * 1e-2;   // 声道の長さ [m]
+    double r_vt    = 1.25 * 1e-2;   // 声道の断面積 [m^2]
     int    N_vt    = 10;    // 声道のセクション数 (Nsecpに対応)
 
     // --- ファイル/ディレクトリパス ---

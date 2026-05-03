@@ -4,6 +4,7 @@ project(Simulation LANGUAGES CXX)
 set(CMAKE_CXX_COMPILER icpx)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_BUILD_TYPE Debug)
 
 # include ディレクトリを追加
 include_directories(include)
@@ -16,7 +17,7 @@ add_executable(simulation
     src/rungeStep.cpp
     src/simulation.cpp
     src/state.cpp
-    src/test.cpp          # main を含むファイル
+    src/main.cpp          # main を含むファイル
 )
 
 

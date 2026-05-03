@@ -314,16 +314,39 @@ void Geometry::surfArea() {
 
 
 
-    double min_diff = 1e3;
+    double min_diff = 1e9;
     nxsup = 0;
+    double prev_x = -1e9; // 前回のX座標を記憶するための変数
+    
     for (int i = 0; i < nsurfl; ++i) {
-        double diff = std::abs(points[surfp[i][0]].x - xsup);
-        if (diff < min_diff) {
-            min_diff = diff;
-            nxsup = i+1;
+        int nid = surfp[i][0];
+        
+        // メッシュが途切れている場合は終了
+        if (nid < 0) {
+            break; 
         }
-    }
 
+        double curr_x = points[nid].x;
+
+        // 【超重要】X座標が前回から進んでいない（dx ≒ 0）場合は、
+        // 平坦な管（声帯の出口）に到達した証拠なので、迷わず強制終了する！
+        if (i > 0 && std::abs(curr_x - prev_x) < 1e-4) {
+            break;
+        }
+
+        double diff = std::abs(curr_x - xsup);
+
+        // 差が明確に縮まっている間は更新
+        if (diff < min_diff - 1e-5) {
+            min_diff = diff;
+            nxsup = i ; // 要素数として扱うため i + 1
+        } 
+        else {
+            break; // 遠ざかり始めたら終了
+        }
+
+        prev_x = curr_x; 
+    }
 
 
     if (nsurfl < 2 || nsurfz < 2) return; // 十分なサーフェスがない場合
@@ -346,7 +369,16 @@ void Geometry::surfArea() {
             double dz = 0.5 * (points[pid_up].z - points[pid_down].z);
             sarea[i][j] = ds * dz;
         }   
-    }     
+    }   
+
+    std::ofstream fsA("../output/SurfArea.dat");
+    
+    for (int i = 1; i < nxsup-1; i++){
+        for (int j = 1; j < nsurfz-1; ++j){
+            fsA << sarea[i][j] << " ";
+        }
+        fsA << std::endl;
+    }
 }
 
 void Geometry::surfExtractFromNAS(const std::string& nasFile, int nsurfl_param, int nsurfz_param) {

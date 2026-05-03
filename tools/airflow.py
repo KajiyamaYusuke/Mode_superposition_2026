@@ -15,8 +15,8 @@ values_m3 = harea[:, 1]     # 2列目（流量 [m^3/s]）
 values_ml = values_m3 * 1e6 
 
 x = labels * 1e-5
-start_time = 0.205
-duration   = 0.03
+start_time = 0.0
+duration   = 0.05
 
 plt.figure(figsize=(8,2), dpi=100)
 
@@ -31,7 +31,7 @@ plt.grid(True)
 # 表示範囲の設定（ml/s になったので桁が変わります）
 # 元が 0.001 m^3/s だったら 1000 ml/s です
 plt.xlim(start_time, start_time + duration)
-plt.ylim(0, 700) # ※データの振幅に合わせて調整してください
+#plt.ylim(0, 700) # ※データの振幅に合わせて調整してください
 
 plt.tight_layout()
 # plt.legend() # labelを設定していないのでコメントアウトしました

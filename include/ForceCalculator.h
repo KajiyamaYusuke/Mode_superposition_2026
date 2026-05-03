@@ -8,7 +8,9 @@
 
 class ForceCalculator {
 public:
-    ForceCalculator(const Geometry& geom, const ModeData& md, State& st, const SimulationParams& sp);
+    ForceCalculator(const Geometry& geomL, const Geometry& geomR, 
+                    const ModeData& mdL, const ModeData& mdR, 
+                    State& stL, State& stR, const SimulationParams& sp);
 
     void initialize();
     void calcForce(double t, int n); // メイン計算関数
@@ -20,21 +22,35 @@ public:
     void f2mode();
     void outputForceVectors(int step) const;
 
+    std::vector<std::vector<double>> fxL, fyL, fzL;
+    std::vector<std::vector<double>> fdisL; // 左の接触力バッファ
+    std::vector<double> fiL;                // 左のモード力
+    std::vector<std::vector<std::vector<double>>> degreeL;
 
-    std::vector<std::vector<double>> fx, fy, fz;
-    std::vector<double> fi;
-    std::vector<std::vector<double>> fdis; // dissipation force
+    std::vector<std::vector<double>> fxR, fyR, fzR;
+    std::vector<std::vector<double>> fdisR; // 右の接触力バッファ
+    std::vector<double> fiR;                // 右のモード力
+    std::vector<std::vector<std::vector<double>>> degreeR;
+
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
     std::vector<double> minHarea;  // Minimum area 
-
     std::vector<double> harea;  // 流路断面積
-    std::vector<std::vector<std::vector<double>>> degree; // [2][nxsup][nsurfz]
+
+    std::vector<double> Uu; // Upstream (Trachea) flow
+    std::vector<double> Pu; // Upstream (Trachea) pressure
+    std::vector<double> Ud; // Downstream (Vocal Tract) flow
+    std::vector<double> Pd; // Downstream (Vocal Tract) pressure
+
 
     bool contactFlag;
 
     double currentUg;
+    double currentPg;   // Subglottal pressure at glottis entry
     double max_force_diff;
+
+    std::vector<std::vector<double>> contactForceL_ij;
+    std::vector<std::vector<double>> contactForceR_ij;
 
 private:
     // Ishizaka & Flanagan (1972) モデル用
@@ -42,19 +58,12 @@ private:
 
     // 状態変数 (Previous step values)
     // Nsecg: subglottal sections, Nsecp: supraglottal sections
-    static const int Nsecg = 3; // 気管のセクション数
-    static const int Nsecp = 10; // 声道のセクション数
-
-    std::vector<double> Uu; // Upstream (Trachea) flow
-    std::vector<double> Pu; // Upstream (Trachea) pressure
-    std::vector<double> Ud; // Downstream (Vocal Tract) flow
-    std::vector<double> Pd; // Downstream (Vocal Tract) pressure
 
     
     // 現在のステップのUg
     double previousUg = 0.0;
     
-    double currentPg;   // Subglottal pressure at glottis entry
+    
     double currentPout; // Radiation pressure
 
     // 物理定数・回路定数 (Initializeで計算または設定)
@@ -66,10 +75,12 @@ private:
 
     bool hasVocalTract;
 
-    // --- 既存の参照 ---
-    const Geometry& geom;
-    const ModeData& modeData;
-    State& state;
+    const Geometry& geomL;
+    const Geometry& geomR;
+    const ModeData& modeDataL;
+    const ModeData& modeDataR;
+    State& stateL;
+    State& stateR;
     const SimulationParams& sp;
     int nxsup;
 

@@ -4,6 +4,7 @@ build/
 # 実行結果
 output/
 output2/
+output_force/
 result/
 input/
 

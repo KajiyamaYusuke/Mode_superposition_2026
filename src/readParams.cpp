@@ -61,8 +61,6 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         iforce  = std::stoi(nextLine());
         forcef  = std::stod(nextLine());
         famp    = std::stod(nextLine());
-        mass    = std::stod(nextLine());
-
     } catch (...) {
         err = "Parse error (check file format)";
         return false;

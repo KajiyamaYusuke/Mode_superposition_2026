@@ -29,31 +29,78 @@ void ModeData::loadFromVTU(const std::string& filename, const Geometry& geom) {
     std::map<std::string, std::vector<double>> xData, yData, zData;
 
     // X/Y/Z 成分を判定する正規表現
-    std::regex rxX("Name=\"Displacement_field,_X-?component_@_([0-9.]+_Hz)\"");
-    std::regex rxY("Name=\"Displacement_field,_Y-?component_@_([0-9.]+_Hz)\"");
-    std::regex rxZ("Name=\"Displacement_field,_Z-?component_@_([0-9.]+_Hz)\"");
+    std::regex rxX("Name=\"Displacement_field,_X-?component_@_([^\"]+)\"");
+    std::regex rxY("Name=\"Displacement_field,_Y-?component_@_([^\"]+)\"");
+    std::regex rxZ("Name=\"Displacement_field,_Z-?component_@_([^\"]+)\"");
 
     std::string currentKey;
     std::vector<double>* currentBuffer = nullptr;
+    
+    // 【追加】重複回避のためのマップ: 元の名前 -> 現在のサフィックス付き名前
+    std::map<std::string, std::string> activeKeyMap; 
 
     while (std::getline(file, line)) {
         std::smatch match;
 
-        if (std::regex_search(line, match, rxX)) {
-            currentKey = match[1]; // 例: "87.739_Hz"
-            xData[currentKey] = {};
-            currentBuffer = &xData[currentKey];
-            continue;
+        // ... 前略 ...
+if (std::regex_search(line, match, rxX)) {
+    std::string rawKey = match[1]; // 例: "232.91_Hz"
+    
+    // --- デバッグ出力追加: 何が見つかったか表示 ---
+    // std::cout << "[DEBUG] Found X-key: " << rawKey;
+
+    // --- 重複チェックロジック ---
+        if (xData.count(rawKey) && !xData[rawKey].empty()) {
+            // 重複検出
+            int counter = 2;
+            std::string newKey = rawKey + "_v" + std::to_string(counter);
+            while (xData.count(newKey) && !xData[newKey].empty()) {
+                counter++;
+                newKey = rawKey + "_v" + std::to_string(counter);
+            }
+            
+            // --- デバッグ出力: 重複があったことを表示 ---
+            std::cout << " -> COLLISION! Renaming to: " << newKey << std::endl;
+
+            activeKeyMap[rawKey] = newKey; 
+        } else {
+            // --- デバッグ出力: 新規であることを表示 ---
+            //std::cout << " -> New mode (Registered)" << std::endl;
+            
+            activeKeyMap[rawKey] = rawKey;
+        }
+        
+        currentKey = activeKeyMap[rawKey];
+        xData[currentKey] = {};
+        currentBuffer = &xData[currentKey];
+        continue;
+
+            
         } else if (std::regex_search(line, match, rxY)) {
-            currentKey = match[1];
+            std::string rawKey = match[1];
+            // X成分で決定されたキー（サフィックス付きかもしれない）を使用
+            if (activeKeyMap.find(rawKey) == activeKeyMap.end()) {
+                 // XがなくYがいきなり来た場合の安全策（通常ありえない）
+                 activeKeyMap[rawKey] = rawKey;
+            }
+            currentKey = activeKeyMap[rawKey];
+            
             yData[currentKey] = {};
             currentBuffer = &yData[currentKey];
             continue;
+            
         } else if (std::regex_search(line, match, rxZ)) {
-            currentKey = match[1];
+            std::string rawKey = match[1];
+            // X成分で決定されたキーを使用
+            if (activeKeyMap.find(rawKey) == activeKeyMap.end()) {
+                 activeKeyMap[rawKey] = rawKey;
+            }
+            currentKey = activeKeyMap[rawKey];
+
             zData[currentKey] = {};
             currentBuffer = &zData[currentKey];
             continue;
+            
         } else if (line.find("</DataArray>") != std::string::npos) {
             currentBuffer = nullptr;
             continue;
@@ -72,10 +119,15 @@ void ModeData::loadFromVTU(const std::string& filename, const Geometry& geom) {
     for (auto& [key, _] : xData) modeKeys.push_back(key);
 
     std::sort(modeKeys.begin(), modeKeys.end(), [](const std::string& a, const std::string& b) {
-    auto parseHz = [](const std::string& s) {
-        return std::stod(s.substr(0, s.find("_Hz"))); // "_Hz"前までをdoubleに変換
-    };
-        return parseHz(a) < parseHz(b);
+        auto parseHz = [](const std::string& s) {
+            // "_v2" などがついている場合に対応するため、"_Hz"を探してそこまでを数値化
+            return std::stod(s.substr(0, s.find("_Hz"))); 
+        };
+        // 数値が同じ（重複モード）の場合は、名前に含まれる "_v" の有無などで順序を保つ
+        double va = parseHz(a);
+        double vb = parseHz(b);
+        if (std::abs(va - vb) < 1e-9) return a < b; // 値が同じなら辞書順 ("_Hz" < "_Hz_v2")
+        return va < vb;
     });
 
     nModes = modeKeys.size();
@@ -89,6 +141,8 @@ void ModeData::loadFromVTU(const std::string& filename, const Geometry& geom) {
         const auto& z = zData[key];
 
         if (x.size() != nPoints || y.size() != nPoints || z.size() != nPoints) {
+            std::cerr << "Error in Mode: " << key << " (Points expected: " << nPoints << ")" << std::endl;
+            std::cerr << " Sizes -> X: " << x.size() << ", Y: " << y.size() << ", Z: " << z.size() << std::endl;
             throw std::runtime_error("Mode " + key + ": size mismatch with geometry points");
         }
 
@@ -97,23 +151,13 @@ void ModeData::loadFromVTU(const std::string& filename, const Geometry& geom) {
             disp[i] = { z[i], x[i], y[i] }; // 座標入れ替え
         }
         modes[m] = disp;
-
     }
 
-    /* std::cout << "\n=== ModeData Debug Output ===\n";
-    for (int m = 0; m < std::min(nModes, 3); ++m) {  // 最初の3モードだけ
-        std::cout << "Mode " << m 
-                << " (" << modeKeys[m] << "), " 
-                << modes[m].size() << " points\n";
-
-        for (int i = 0; i < std::min(nPoints, 10); ++i) {  // 各モードの最初の5点だけ
-            const auto& d = modes[m][i];
-            std::cout << "  Point " << i 
-                    << ": (" << d.ux << ", " << d.uy << ", " << d.uz << ")\n";
-        }
-        std::cout << std::endl;
-    } */
-
+    std::cout << "\n=== LOADED MODE KEYS LIST (" << nModes << ") ===" << std::endl;
+    for (const auto& key : modeKeys) {
+        std::cout << key << std::endl;
+    }
+    std::cout << "=======================================\n" << std::endl;
 
     std::cout << "ModeData: Loaded " << nModes 
               << " modes (" << nPoints << " points each)." << std::endl;

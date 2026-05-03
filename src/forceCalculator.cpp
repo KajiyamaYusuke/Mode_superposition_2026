@@ -14,74 +14,80 @@ auto checkNaN = [](double val, const std::string& name) {
 
 
 
-ForceCalculator::ForceCalculator(const Geometry& geom_, const ModeData& md_, State& st_, const SimulationParams& sp_)
-    : geom(geom_), modeData(md_), state(st_), sp(sp_) {}
-
+ForceCalculator::ForceCalculator(const Geometry& geomL_, const Geometry& geomR_, 
+                                 const ModeData& mdL_, const ModeData& mdR_, 
+                                 State& stL_, State& stR_, const SimulationParams& sp_)
+    : geomL(geomL_), geomR(geomR_), 
+      modeDataL(mdL_), modeDataR(mdR_), 
+      stateL(stL_), stateR(stR_), sp(sp_) {}
 
 
 
 void ForceCalculator::initialize() {
-    int nPoints = geom.nPoints;
-    int nsurfl  = geom.nsurfl;
-    int nsurfz  = geom.nsurfz;
-    int nModes  = modeData.nModes;
+    // --- 左右それぞれのサイズを取得 ---
+    int nsurfl_L = geomL.nsurfl;
+    int nsurfz_L = geomL.nsurfz;
+    int nModes_L = modeDataL.nModes;
 
-    // 節点ごとの外力
-    fx.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fy.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fz.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    int nsurfl_R = geomR.nsurfl;
+    int nsurfz_R = geomR.nsurfz;
+    int nModes_R = modeDataR.nModes;
 
-    // モード力
-    fi.assign(nModes, 0.0);
+    // --- 左声帯 (L) の変数初期化 ---
+    fxL.assign(nsurfl_L, std::vector<double>(nsurfz_L, 0.0));
+    fyL.assign(nsurfl_L, std::vector<double>(nsurfz_L, 0.0));
+    fzL.assign(nsurfl_L, std::vector<double>(nsurfz_L, 0.0));
+    fiL.assign(nModes_L, 0.0);
 
-    // 内部バッファ
-    nxsup = geom.nxsup;  // 断面数 (x方向分割)
-    fdis.assign(nxsup, std::vector<double>(geom.nsurfz - 1, 0.0));
+    // --- 右声帯 (R) の変数初期化 ---
+    fxR.assign(nsurfl_R, std::vector<double>(nsurfz_R, 0.0));
+    fyR.assign(nsurfl_R, std::vector<double>(nsurfz_R, 0.0));
+    fzR.assign(nsurfl_R, std::vector<double>(nsurfz_R, 0.0));
+    fiR.assign(nModes_R, 0.0);
 
+    // --- 内部バッファ (流路断面数は左右で共通と仮定) ---
+    nxsup = geomL.nxsup; 
+    fdisL.assign(nxsup, std::vector<double>(geomL.nsurfz - 1, 0.0));
+    fdisR.assign(nxsup, std::vector<double>(geomR.nsurfz - 1, 0.0));
+
+    // --- 共有変数の初期化 ---
     psurf.assign(nxsup, 0.0);
-    Ug.assign(state.nSteps, 0.0);
-    minHarea.assign(state.nSteps, 0.0);
+    Ug.assign(stateL.nSteps, 0.0);       // ステップ数はL/R共通
+    minHarea.assign(stateL.nSteps, 0.0);
+
+    int Nsecg = sp.N_sub;
+    int Nsecp = sp.N_vt;
 
     Uu.assign(Nsecg + 1, 0.0); // +2 for boundaries
     Pu.assign(Nsecg + 2, 0.0);
-    Ud.assign(Nsecp , 0.0);
+    Ud.assign(Nsecp, 0.0);
     Pd.assign(Nsecp , 0.0);
 
     harea.clear();
-    degree.clear();
-
+    degreeL.clear();
+    degreeR.clear();
     
     currentUg = 0.0;    
 
     rho = sp.rho ;
     mu  = sp.mu ;
-    lg  = geom.zmax ; 
+    lg  = geomL.zmax ; // 声門長は左を基準（左右同じはず）
 
     c_sound = sp.c_sound;
 
     double A_inlet = M_PI * sp.r_inlet * sp.r_inlet;
-    double L_inlet = sp.L_inlet;
-
-    // 2. Subglottal Tract (声門下)
     double A_sub   = M_PI * sp.r_sub * sp.r_sub;
-    double L_sub   = sp.L_sub;
-    int    N_sub   = sp.N_sub; // param.txt の section数
+    double A_vt    = M_PI * sp.r_vt * sp.r_vt;
 
-    // 3. Vocal Tract (声道)
-    double A_vt    = sp.A_vt;
-    double L_vt    = sp.L_vt;
-       int N_vt    = sp.N_vt; // param.txt の section数 (Nsecpで使用)
     const double A_vt_thresh = 1e-12;
-    hasVocalTract = (L_vt > 1e-6) && (A_vt > A_vt_thresh);
-    // --- インピーダンス計算 (L = rho*l/A, C = V / (rho*c^2) = l*A / (rho*c^2)) ---
+    hasVocalTract = (sp.L_vt > 1e-6) && (A_vt > A_vt_thresh);
     
-    // Inlet parameters (Lui, Cui)
-    Lui = rho * L_inlet / (2*A_inlet);
-    Cui = L_inlet * A_inlet / (rho * c_sound * c_sound);
+    // --- インピーダンス計算 ---
+    Lui = rho * sp.L_inlet / (2.0 * A_inlet); 
+    Cui = sp.L_inlet * A_inlet / (rho * c_sound * c_sound);
 
-    // Subglottal parameters (Lu, Cu) 
-    double dx_sub = L_sub / N_sub;
-    Lu = rho * dx_sub / A_sub;
+    double dx_sub = sp.L_sub / std::max(1, Nsecg);
+    Lu = rho * dx_sub / (2.0 * A_sub); // 元コードの /2.0 を再現
     Cu = dx_sub * A_sub / (rho * c_sound * c_sound);
 
     alpha1 = -2.5e-5*sp.ps+0.185;
@@ -90,77 +96,86 @@ void ForceCalculator::initialize() {
 
     // safe R2
     if (A_vt > A_vt_thresh) {
-        R2 = alpha1 / (A_vt * A_vt) * std::sqrt(rho * mu * c_sound);
+        R2 = alpha1 / (A_sub * A_sub) * std::sqrt(rho * mu * c_sound);
     } else {
-        R2 = 0.0; // no vocal tract resistance contribution
+        R2 = 0.0;
     }
 
-    if (L_vt > 1e-6) {
-        double dx_vt = L_vt / std::max(1, Nsecp); 
+    if (hasVocalTract) {
+        double dx_vt = sp.L_vt / std::max(1, Nsecp); 
         La = rho * dx_vt / A_vt;
         Ca = dx_vt * A_vt / (rho * c_sound * c_sound);
         
-        Lr = rho * 1.1 * sqrt(A_vt/M_PI) /A_vt;
-        Rr = alpha2*rho*c_sound/(9*M_PI*M_PI*A_vt);
+        Lr = rho * 1.1 * std::sqrt(A_vt / M_PI) / A_vt;
+        Rr = alpha2 * rho * c_sound / (9.0 * M_PI * M_PI * A_vt);
     } else {
-        // 声道がない場合、計算に使わないがゼロ除算回避のため安全な値を入れておく
         La = 1e-1; // ダミー
-        Ca = 1.0e30; // 非常に大きくすることで圧力変動をゼロにする(大気開放)
+        Ca = 1.0e30; 
         Lr = 0.0;
         Rr = 0.0;
     }
-    
 
-    std::cout << "[ForceCalculator] initialized: "
-              << "nPoints=" << nPoints
-              << ", nModes=" << nModes
+    contactForceL_ij.resize(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0));
+    contactForceR_ij.resize(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
+
+    std::ofstream initDebugFile("../output/debug_force.txt", std::ios::trunc);
+    if (initDebugFile) {
+        initDebugFile << "=== Debug Force Log Initialized ===\n";
+        initDebugFile.close();
+    }
+    
+    std::cout << "[ForceCalculator] initialized (Asymmetric): "
+              << "nModesL=" << nModes_L << ", nModesR=" << nModes_R
               << ", nxsup=" << nxsup 
-              << ", L_sub=" << L_sub
-              << ", L_vt=" << L_vt
+              << ", L_sub=" << sp.L_sub
+              << ", L_vt=" << sp.L_vt
               << std::endl;
 }
 
 void ForceCalculator::calcForce(double t, int n) {
-    int nsurfl = geom.nsurfl;
-    int nsurfz = geom.nsurfz;
-    int nxsup  = geom.nxsup;
+    // 左右で共通の分割数を使用
+    int nsurfl = geomL.nsurfl;
+    int nsurfz = geomL.nsurfz;
+    int nxsup  = geomL.nxsup;
 
-    fx.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fy.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fz.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    fxL.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    fyL.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    fzL.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
 
+    fxR.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    fyR.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    fzR.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
 
     for (int i = 0; i < nxsup; i++) {
         for (int j = 0; j < nsurfz - 1; j++) {
-            fdis[i][j] = 0.0;
+            fdisL[i][j] = 0.0;
+            fdisR[i][j] = 0.0;
         }
     }
 
-
     if (sp.iforce == 1) {
-        // ==== sin波加振 ====
-
+        // ==== sin波加振 (テスト用) ====
         minHarea[n] = *std::min_element(harea.begin(), harea.end());
-        
         
         for (int i = 1; i < nxsup-1; i++) {
             for (int j = 1; j < nsurfz-1; j++) {
-
-                fx[i][j] = sp.famp * std::sin(2.0* M_PI *sp.forcef* t);
-                //fy[i][j] = sp.famp * std::sin(2.0* M_PI *sp.forcef* t);
-                //fz[i][j] = sp.famp * std::sin(2.0* M_PI *sp.forcef* t);
+                fxL[i][j] = sp.famp * std::sin(2.0 * M_PI * sp.forcef * t);
+                fxR[i][j] = sp.famp * std::sin(2.0 * M_PI * sp.forcef * t);
             }
         }
     } else if (sp.iforce == 0) {
-
         // ==== 1D flow model ====
         double minA = findMinHarea();
         minHarea[n] = minA;
 
+
         previousUg = (n > 0 && n-1 < (int)Ug.size()) ? Ug[n-1] : 0.0;
+
+        // 安全な面積を使って流体計算を進める
         calcFlowStep(t, sp.dt, minA * 1e-6);
-        // separation point
-        int nsep = findNsep(minA) ;
+        
+        // 剥離点の特定
+        int nsep = findNsep(minA);
 
         Ug[n] = currentUg;
 
@@ -168,78 +183,141 @@ void ForceCalculator::calcForce(double t, int n) {
         std::fill(psurf.begin(), psurf.end(), 0.0);
         psurf[0] = currentPg;
 
-        if (minA > 1e-6 ) {
-            for (int i = 1; i < geom.nxsup; i++) {
-                double dx = std::abs(geom.points[geom.surfp[i][ int(nsurfz/2)]].x - geom.points[geom.surfp[i-1][int(nsurfz/2)]].x);
+        std::ofstream debugFile("../output/debug_force.txt", std::ios::app);
+        if(debugFile){
+            debugFile << "Step: " << std::setw(4) << n 
+                      << " | minA: " << std::scientific << std::setprecision(12) << minA 
+                      << " | subPg: " << std::scientific << std::setprecision(12) << currentPg  << "\n";
+            debugFile.close();
+        }
+
+        if (minA > 1e-6) {
+            for (int i = 1; i < nxsup; i++) {
+                // dxの計算は左声帯の座標を使用
+                double dx = std::abs(geomL.points[geomL.surfp[i][int(nsurfz/2)]].x - geomL.points[geomL.surfp[i-1][int(nsurfz/2)]].x);
                 double h  = (harea[i] + harea[i-1]) / (2.0 * lg);
                 double h_prev = std::max(harea[i-1], 1e-3);
                 double h_curr = std::max(harea[i], 1e-3);
 
-                double Ugm = currentUg*1e6;
+                double Ugm = currentUg * 1e6;
 
                 double bernoulli_term = 0.5 * rho * Ugm * Ugm * (1.0/(h_prev*h_prev) - 1.0/(h_curr*h_curr));
-                double viscous_term   = 12.0 * mu * dx * Ugm / (lg * pow(h, 3.0)) *1e3;
+                double viscous_term   = 12.0 * mu * dx * Ugm / (lg * pow(h, 3.0)) * 1e3;
 
                 psurf[i] = psurf[i-1] + bernoulli_term - viscous_term;
 
-                if(psurf[i] > psurf[i-1]){break;}
-
+                if (psurf[i] > psurf[i-1]) { break; } // 圧力回復で剥離
             }
-
-
         } else {
             for (int i = 1; i < nsep-1; ++i) psurf[i] = currentPg;
             for (int i = nsep-1; i < nxsup; ++i) psurf[i] = Pd[0];
         }
 
-
-        // 力 fx, fy, fz
         for (int i = 1; i < nsep-1; i++) {
             for (int j = 1; j < nsurfz-1; j++) {
-                int pid_ip1 = geom.surfp[i+1][j];
-                int pid_im1 = geom.surfp[i-1][j];
-                int pid_jp1 = geom.surfp[i][j+1];
-                int pid_jm1 = geom.surfp[i][j-1];
+                
+                int pid_ip1_L = geomL.surfp[i+1][j];
+                int pid_im1_L = geomL.surfp[i-1][j];
+                int pid_jp1_L = geomL.surfp[i][j+1];
+                int pid_jm1_L = geomL.surfp[i][j-1];
 
-                double dx = 0.5 * (state.disp[pid_ip1].ux - state.disp[pid_im1].ux);
-                double dy = 0.5 * (state.disp[pid_ip1].uy - state.disp[pid_im1].uy);
-                double ds = std::sqrt(dx*dx + dy*dy);
-                double dz = 0.5 * (state.disp[pid_jp1].uz - state.disp[pid_jm1].uz);
+                if (pid_ip1_L >= 0 && pid_im1_L >= 0 && pid_jp1_L >= 0 && pid_jm1_L >= 0) {
+                    double dxL = 0.5 * (stateL.disp[pid_ip1_L].ux - stateL.disp[pid_im1_L].ux);
+                    double dyL = 0.5 * (stateL.disp[pid_ip1_L].uy - stateL.disp[pid_im1_L].uy);
+                    double dsL = std::sqrt(dxL*dxL + dyL*dyL);
+                    double dzL = 0.5 * (stateL.disp[pid_jp1_L].uz - stateL.disp[pid_jm1_L].uz);
 
-                fx[i][j] = psurf[i] * ds * dz * 1.0e-6 * std::cos(degree[1][i][j]) * std::sin(degree[0][i][j]);
-                fy[i][j] = -psurf[i] * ds * dz * 1.0e-6 * std::cos(degree[1][i][j]) * std::cos(degree[0][i][j]);
-                fz[i][j] = psurf[i] * ds * dz * 1.0e-6 * std::sin(degree[1][i][j]);
+                    fxL[i][j] = psurf[i] * dsL * dzL * 1.0e-6 * std::cos(degreeL[1][i][j]) * std::sin(degreeL[0][i][j]);
 
+                    fyL[i][j] = -psurf[i] * dsL * dzL * 1.0e-6 * std::cos(degreeL[1][i][j]) * std::cos(degreeL[0][i][j]);
+                    fzL[i][j] = psurf[i] * dsL * dzL * 1.0e-6 * std::sin(degreeL[1][i][j]);
+
+                    // if (i == 38 && j == 10) { // 情報過多を防ぐため、jは中央の代表点のみを出力
+                    //     std::ofstream debugFile("../output/debug_force.txt", std::ios::app);
+                    //     if(debugFile){
+                    //         debugFile << std::scientific << std::setprecision(8);
+                    //         debugFile << "=== Debug Step: " << n << " | i=" << i << ", j=" << j << " ===\n";
+                    //         debugFile << "[Common] psurf : " << psurf[i] << "\n";
+                            
+                    //         debugFile << "[Left ] dsL: " << dsL << " | dzL: " << dzL 
+                    //                 << " | degL0(x-y): " << degreeL[0][i][j] 
+                    //                 << " | degL1(y-z): " << degreeL[1][i][j] 
+                    //                 << " => fyL: " << fyL[i][j] << "\n";
+                    //                 debugFile.close();}
+                    // }
+                }
+
+                int pid_ip1_R = geomR.surfp[i+1][j];
+                int pid_im1_R = geomR.surfp[i-1][j];
+                int pid_jp1_R = geomR.surfp[i][j+1];
+                int pid_jm1_R = geomR.surfp[i][j-1];
+
+                if (pid_ip1_R >= 0 && pid_im1_R >= 0 && pid_jp1_R >= 0 && pid_jm1_R >= 0) {
+                    double dxR = 0.5 * (stateR.disp[pid_ip1_R].ux - stateR.disp[pid_im1_R].ux);
+                    double dyR = 0.5 * (stateR.disp[pid_ip1_R].uy - stateR.disp[pid_im1_R].uy);
+                    double dsR = std::sqrt(dxR*dxR + dyR*dyR);
+                    double dzR = 0.5 * (stateR.disp[pid_jp1_R].uz - stateR.disp[pid_jm1_R].uz);
+
+                    fxR[i][j] = -psurf[i] * dsR * dzR * 1.0e-6 * std::cos(degreeR[1][i][j]) * std::sin(degreeR[0][i][j]);
+
+                    fyR[i][j] = psurf[i] * dsR * dzR * 1.0e-6 * std::cos(degreeR[1][i][j]) * std::cos(degreeR[0][i][j]);
+                    fzR[i][j] = -psurf[i] * dsR * dzR * 1.0e-6 * std::sin(degreeR[1][i][j]);
+
+                    // if (i == 38 && j == 10) { 
+                    //     std::ofstream debugFile("../output/debug_force.txt", std::ios::app);
+                    //     if(debugFile){
+                    //         debugFile << std::scientific << std::setprecision(8);
+                                    
+                    //         debugFile << "[Right] dsR: " << dsR << " | dzR: " << dzR 
+                    //                 << " | degR0(x-y): " << degreeR[0][i][j] 
+                    //                 << " | degR1(y-z): " << degreeR[1][i][j] 
+                    //                 << " => fyR: " << fyR[i][j] << "\n";
+                            
+                    //         debugFile << "[Diff ] abs(fyL) - abs(fyR) = " 
+                    //                 << std::abs(fyL[i][j]) - std::abs(fyR[i][j]) << "\n";
+                    //         debugFile << "=======================================\n";
+                            
+                    //         debugFile.close();}
+                    // }
+                }
+                
+                
             }
         }
-        
-    }
-    
 
+    }
 }
 
 void ForceCalculator::f2mode() {
 
-
-
-    for (int imode = 0; imode < modeData.nModes; imode++) {
-        fi[imode] = 0.0;
-        for (int i = 0; i < geom.nsurfl; i++) {
-            for (int j = 0; j < geom.nsurfz; j++) {
-                int pid = geom.surfp[i][j];
+    for (int imode = 0; imode < modeDataL.nModes; imode++) {
+        fiL[imode] = 0.0;
+        for (int i = 0; i < geomL.nsurfl; i++) {
+            for (int j = 0; j < geomL.nsurfz; j++) {
+                int pid = geomL.surfp[i][j];
                 if (pid < 0) continue; // 節点が存在しない場合スキップ
 
-                fi[imode] += fx[i][j] * modeData.modes[imode][pid].ux
-                           + fy[i][j] * modeData.modes[imode][pid].uy
-                           + fz[i][j] * modeData.modes[imode][pid].uz;
-
+                fiL[imode] += fxL[i][j] * modeDataL.modes[imode][pid].ux
+                            + fyL[i][j] * modeDataL.modes[imode][pid].uy
+                            + fzL[i][j] * modeDataL.modes[imode][pid].uz;
             }
         }
     }
 
-     //std::cout<<"|disp[1]= "<<state.disp[11].ux<<std::endl;
-}
+    for (int imode = 0; imode < modeDataR.nModes; imode++) {
+        fiR[imode] = 0.0;
+        for (int i = 0; i < geomR.nsurfl; i++) {
+            for (int j = 0; j < geomR.nsurfz; j++) {
+                int pid = geomR.surfp[i][j];
+                if (pid < 0) continue; // 節点が存在しない場合スキップ
 
+                fiR[imode] += fxR[i][j] * modeDataR.modes[imode][pid].ux
+                            + fyR[i][j] * modeDataR.modes[imode][pid].uy
+                            + fzR[i][j] * modeDataR.modes[imode][pid].uz;
+            }
+        }
+    }
+}
 // void ForceCalculator::contactForce() {
 
 //     contactFlag = false;
@@ -282,121 +360,221 @@ void ForceCalculator::f2mode() {
 // }
 
 void ForceCalculator::calcArea() {
-    if (geom.nxsup < 2 || geom.nsurfz < 2) return;
+    // 左右どちらかのメッシュサイズを基準とする（今回は左を基準）
+    if (geomL.nxsup < 2 || geomL.nsurfz < 2) return;
 
-
-    // harea
-    harea.assign(geom.nxsup, 0.0);
-    for (int i = 0; i < geom.nxsup; ++i) {
+    harea.assign(geomL.nxsup, 0.0);
+    
+    for (int i = 0; i < geomL.nxsup; ++i) {
         double hi = 0.0;
-        for (int j = 0; j < geom.nsurfz-1; ++j) {
-            int pid1 = geom.surfp[i][j];
-            int pid2 = geom.surfp[i][j+1];
+        for (int j = 0; j < geomL.nsurfz - 1; ++j) {
 
-            if (pid1 < 0 || pid2 < 0) continue;
+            int pid1L = geomL.surfp[i][j];
+            int pid2L = geomL.surfp[i][j+1];
+            
+            int pid1R = geomR.surfp[i][j];
+            int pid2R = geomR.surfp[i][j+1];
 
-            double ztmp = std::abs(state.disp[pid2].uz - state.disp[pid1].uz);
-            double ytmp = geom.ymid[j] - 0.5 * (state.disp[pid2].uy + state.disp[pid1].uy);
+            if (pid1L < 0 || pid2L < 0 || pid1R < 0 || pid2R < 0) continue;
 
-            if (ytmp < 0.0) ytmp = 0.0;
-            if (!std::isfinite(ytmp)) ytmp = 0.0;
+            // Z方向の幅 
+            double yL_1 = stateL.disp[pid1L].uy ;
+            double yL_2 = stateL.disp[pid2L].uy ;
+            double yL_avg = 0.5 * (yL_1 + yL_2);
+
+            // 右声帯のY座標 (現在の変位 + 速度×dt による予測)
+            double yR_1 = stateR.disp[pid1R].uy ;
+            double yR_2 = stateR.disp[pid2R].uy ;
+            double yR_avg = 0.5 * (yR_1 + yR_2);
+
+            double gap = yR_avg - yL_avg;
+
+            // Z方向の幅 (現在の変位 + 速度×dt による予測)
+            double zL_1 = stateL.disp[pid1L].uz ;
+            double zL_2 = stateL.disp[pid2L].uz ;
+            double ztmp = std::abs(zL_2 - zL_1);
+
+            // 交差（めり込み）した場合は流路面積を0とする
+            if (gap < 0.0) gap = 0.0;
+            if (!std::isfinite(gap)) gap = 0.0;
             if (!std::isfinite(ztmp)) ztmp = 0.0;
 
-            hi += 2.0 * ytmp * ztmp;
-        }
+            hi += gap * ztmp; 
 
+            static int N = 0;
+
+                // calcArea内のループの中で（最初の数ステップだけ）
+            if ( N < 10) {
+                std::cout << "Step: " << N
+                        << " | yL_avg: " << yL_avg 
+                        << " | yR_avg: " << yR_avg 
+                        << " | gap: " << gap << std::endl;
+                        N++;
+            }
+        }
         harea[i] = hi;
-        //std::cout<<"harea["<< 25 << "] = "<< harea[25]<<std::endl;
     }
 
-    // degree
-    degree.assign(2, std::vector<std::vector<double>>(geom.nxsup, std::vector<double>(geom.nsurfz, 0.0)));
 
-    for (int i = 1; i < geom.nxsup-1; ++i) {
-        for (int j = 1; j < geom.nsurfz-1; ++j) {
-            int pid_left  = geom.surfp[i-1][j];
-            int pid_right = geom.surfp[i+1][j];
-            int pid_down  = geom.surfp[i][j-1];
-            int pid_up    = geom.surfp[i][j+1];
+    degreeL.assign(2, std::vector<std::vector<double>>(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0)));
+    degreeR.assign(2, std::vector<std::vector<double>>(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0)));
 
-            if (pid_left<0 || pid_right<0 || pid_down<0 || pid_up<0) continue;
-
-            double dx  = 0.5*(state.disp[pid_right].ux - state.disp[pid_left].ux);
-            double dy1 = 0.5*(state.disp[pid_right].uy - state.disp[pid_left].uy);
-            double dy2 = 0.5*(state.disp[pid_up].uy - state.disp[pid_down].uy);
-            double dz  = 0.5*(state.disp[pid_up].uz - state.disp[pid_down].uz);
+    for (int i = 1; i < geomL.nxsup - 1; ++i) {
+        for (int j = 1; j < geomL.nsurfz - 1; ++j) {
             
-            
+            int pid_leftL  = geomL.surfp[i-1][j];
+            int pid_rightL = geomL.surfp[i+1][j];
+            int pid_downL  = geomL.surfp[i][j-1];
+            int pid_upL    = geomL.surfp[i][j+1];
 
-            if (dx != 0.0) degree[0][i][j] = std::atan(dy1/dx);
-            if (dz != 0.0) degree[1][i][j] = std::atan(dy2/dz);
-        }
-    }
+            if (pid_leftL >= 0 && pid_rightL >= 0 && pid_downL >= 0 && pid_upL >= 0) {
+                double dxL  = 0.5 * (stateL.disp[pid_rightL].ux - stateL.disp[pid_leftL].ux);
+                double dy1L = 0.5 * (stateL.disp[pid_rightL].uy - stateL.disp[pid_leftL].uy);
+                double dy2L = 0.5 * (stateL.disp[pid_upL].uy   - stateL.disp[pid_downL].uy);
+                double dzL  = 0.5 * (stateL.disp[pid_upL].uz   - stateL.disp[pid_downL].uz);
 
-}
+                if (dxL != 0.0) degreeL[0][i][j] = std::atan(dy1L / dxL);
+                if (dzL != 0.0) degreeL[1][i][j] = std::atan(dy2L / dzL);
+            }
 
-void ForceCalculator::calcDis() {
-    contactFlag = false;
 
-    // 固有角振動数
-    double omg1 = 2.0 * M_PI * modeData.frequencies[0];
-    double omg2 = omg1 * omg1;
-    max_force_diff = 0.0;
+            int pid_leftR  = geomR.surfp[i-1][j];
+            int pid_rightR = geomR.surfp[i+1][j];
+            int pid_downR  = geomR.surfp[i][j-1];
+            int pid_upR    = geomR.surfp[i][j+1];
 
-    for (int i = 1; i < nxsup; ++i) {
-        for (int j = 1; j < geom.nsurfz - 1; ++j) {
-            
-            // 前の反復で足した分を一度引いてキャンセルする
-            fy[i][j] -= fdis[i][j]; 
-            double old_force = fdis[i][j];
-            fdis[i][j] = 0.0;
+            if (pid_leftR >= 0 && pid_rightR >= 0 && pid_downR >= 0 && pid_upR >= 0) {
+                double dxR  = 0.5 * (stateR.disp[pid_rightR].ux - stateR.disp[pid_leftR].ux);
+                double dy1R = 0.5 * (stateR.disp[pid_rightR].uy - stateR.disp[pid_leftR].uy);
+                double dy2R = 0.5 * (stateR.disp[pid_upR].uy   - stateR.disp[pid_downR].uy);
+                double dzR  = 0.5 * (stateR.disp[pid_upR].uz   - stateR.disp[pid_downR].uz);
 
-            int pid = geom.surfp[i][j];
-            if (pid < 0) continue;
-
-            // ループ内で更新された予測位置
-            double y_curr = state.predictedDisp[pid].uy; 
-            double y_wall = geom.ymid[j];
-
-            //壁より向こう側にいるか
-            if (y_curr > y_wall) {
-                
-                // 1. めり込み量 (m)
-                double pen = (y_curr - y_wall) * 1e-3; // mm -> m
-
-                // 2. 速度 (m/s) : (現在の予測位置 - 1ステップ前の位置) / dt
-                double y_prev = state.disp[pid].uy;
-                double vel = (y_curr - y_prev) / sp.dt * 1e-3; 
-
-                // 3. 力の計算
-                // バネ力（線形）: kc1 * omg2 * pen
-                double non_linear_term = 1.0 + sp.kc2 * omg2 * pen * pen; 
-                double f_spring = sp.kc1 * omg2 * pen * non_linear_term;
-
-                // --- 3. 減衰力 ---
-                double f_damp = sp.kc3 * vel; 
-
-                // --- 4. 合力 ---
-                double f_total = -(f_spring + f_damp) * geom.sarea[i][j] * 1e-6;
-
-                double diff = std::abs(f_total - old_force);
-                if (diff > max_force_diff) {
-                    max_force_diff = diff;
-                }
-
-                // 力を保存・適用
-                fdis[i][j] = f_total;
-                fy[i][j] += fdis[i][j];
-
-                contactFlag = true;
+                if (dxR != 0.0) degreeR[0][i][j] = std::atan(dy1R / dxR);
+                if (dzR != 0.0) degreeR[1][i][j] = std::atan(dy2R / dzR);
             }
         }
     }
 }
 
+void ForceCalculator::calcDis() {
+
+    for(int i = 0; i < geomL.nxsup; ++i){
+        std::fill(contactForceL_ij[i].begin(), contactForceL_ij[i].end(), 0.0);
+        std::fill(contactForceR_ij[i].begin(), contactForceR_ij[i].end(), 0.0);
+    }
+
+
+    contactFlag = false;
+
+    // 固有角振動数 (非対称のため、左右の固有振動数の平均を剛性の基準とする)
+    double omg1L = 2.0 * M_PI * modeDataL.frequencies[0];
+    double omg1R = 2.0 * M_PI * modeDataR.frequencies[0];
+    double omg2 = 0.5 * (omg1L * omg1L + omg1R * omg1R);
+
+    max_force_diff = 0.0;
+
+    for (int i = 1; i < nxsup; ++i) {
+        for (int j = 1; j < geomL.nsurfz - 1; ++j) {
+            
+            // 前の反復で足した分を一度引いてキャンセルする
+            fyL[i][j] -= fdisL[i][j]; 
+            fyR[i][j] -= fdisR[i][j];
+
+            double old_forceL = fdisL[i][j];
+            double old_forceR = fdisR[i][j];
+
+            fdisL[i][j] = 0.0;
+            fdisR[i][j] = 0.0;
+
+            int pidL = geomL.surfp[i][j];
+            int pidR = geomR.surfp[i][j];
+
+            if (pidL < 0 || pidR < 0) continue;
+
+            // ループ内で更新された予測位置 
+            double yL_curr = stateL.predictedDisp[pidL].uy; 
+            double yR_curr = stateR.predictedDisp[pidR].uy; 
+
+            if (yL_curr > yR_curr) {
+
+                // --- 【追加】初回呼び出し時のみ実行される/* debug */コード ---
+                static bool is_first_contact = true;
+                if(is_first_contact){
+                    std::cout << "\n=== [DEBUG] FIRST CONTACT DETECTED ===" << std::endl;
+                    is_first_contact = false;
+                }
+                // 片側あたりのめり込み量
+                double pen = 0.5 * (yL_curr - yR_curr) * 1e-3; // mm -> m
+
+                // 2. 速度 (m/s) : (現在の予測位置 - 1ステップ前の位置) / dt
+                double yL_prev = stateL.disp[pidL].uy;
+                double velL = (yL_curr - yL_prev) / sp.dt * 1e-3; 
+
+                double yR_prev = stateR.disp[pidR].uy;
+                double velR = (yR_curr - yR_prev) / sp.dt * 1e-3; 
+
+                double vel_rel = 0.5 * (velL - velR);
+
+                // 3. バネ力（線形＋非線形）
+                double non_linear_term = 1.0 + sp.kc2 * omg2 * pen * pen; 
+                double f_spring = sp.kc1 * omg2 * pen * non_linear_term;
+                double f_damp = sp.kc3 * vel_rel;
+
+                // 4. 減衰力
+                double contact_pressure = f_spring + f_damp;
+
+
+                // 5. 合力 
+                double areaL = geomL.sarea[i][j] * 1e-6;
+                double areaR = geomR.sarea[i][j] * 1e-6;
+
+                double f_totalL = -(f_spring + f_damp) * areaL;
+                double f_totalR =  (f_spring + f_damp) * areaR;
+
+                if (f_totalL > 0.0) f_totalL = 0.0;
+                if (f_totalR < 0.0) f_totalR = 0.0;
+
+                double diffL = std::abs(f_totalL - old_forceL);
+                double diffR = std::abs(f_totalR - old_forceR);
+                if (diffL > max_force_diff) max_force_diff = diffL;
+                if (diffR > max_force_diff) max_force_diff = diffR;
+
+                // 力を保存・適用
+                fdisL[i][j] = f_totalL;
+                contactForceL_ij[i][j] = f_totalL;
+                fyL[i][j] += fdisL[i][j];
+
+                fdisR[i][j] = f_totalR;
+                contactForceR_ij[i][j] = f_totalR;
+                fyR[i][j] += fdisR[i][j];
+
+                contactFlag = true;
+            }
+        }
+    }
+
+
+}
+
 void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
+
+    static bool printed_constants = false;
+    if (t > 0.0 && !printed_constants) {
+        std::cout << "\n=== [DEBUG] calcFlowStep Constants at Step 1 ===" << std::scientific << std::setprecision(12) << std::endl;
+        std::cout << "ps (Lung Press): " << sp.ps << std::endl;
+        std::cout << "rho: " << rho << " | mu: " << mu << std::endl;
+        std::cout << "xsup: " << geomL.xsup << " | lg: " << lg << std::endl;
+        std::cout << "beta: " << beta << " | R2: " << R2 << std::endl;
+        std::cout << "Cu: " << Cu << " | Lu: " << Lu << std::endl;
+        std::cout << "La: " << La << " | Ca: " << Ca << std::endl;
+        std::cout << "=================================================\n" << std::endl;
+        printed_constants = true;
+    }
     
     // --- 1. 声門下 (Subglottal) の更新 ---
+
+    int Nsecp   = sp.N_vt; 
+    int Nsecg   = sp.N_sub; 
     
     double rampDuration = 0.05; // 50msかけて立ち上げる
     double rampFactor = 1.0;
@@ -435,7 +613,7 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
     // --- 2. 声門部 (Glottal Flow) の更新 ---
     if (min_area > 1e-8) {
         double min_area_m2 = min_area;
-        double lis = geom.xsup * 1e-3; // 仮定値 (Fortran側でd1+d2に相当するか要確認)
+        double lis = geomL.xsup * 1e-3; // 仮定値 (Fortran側でd1+d2に相当するか要確認)
         double lg_m = lg * 1e-3;
 
         double Lg1 = rho *  0.5 * lis / min_area_m2;
@@ -502,12 +680,12 @@ double ForceCalculator::findMinHarea() {
 }
 
 int ForceCalculator::findNsep(double minH) {
-    for (int i = 1; i < geom.nxsup; i++) {
+    for (int i = 1; i < nxsup; i++) {
         if (std::fabs(harea[i] - minH) < 1e-8 || harea[i] <= 0.0) {
             return i+1;
         }
     }
-    return geom.nxsup;
+    return geomR.nxsup;
 }
 
 
@@ -518,14 +696,14 @@ void ForceCalculator::outputForceVectors(int step) const {
     std::ofstream fout("../output2/force_" + stepStr.str() + ".csv");
     fout << "x,y,z,Fx,Fy,Fz\n";  // CSVヘッダー
 
-    for (int i = 1; i < geom.nxsup - 1; ++i) {
-        for (int j = 1; j < geom.nsurfz - 1; ++j) {
-            int pid = geom.surfp[i][j];
+    for (int i = 1; i < geomR.nxsup - 1; ++i) {
+        for (int j = 1; j < geomR.nsurfz - 1; ++j) {
+            int pid = geomR.surfp[i][j];
             if (pid < 0) continue;
 
-            const auto &p = geom.points[pid];
+            const auto &p = geomR.points[pid];
             fout << p.x << "," << p.y << "," << p.z << ","
-                 << fx[i][j] << "," << fy[i][j] << "," << fz[i][j] << "\n";
+                 << fxL[i][j] << "," << fyL[i][j] << "," << fzL[i][j] << "\n";
         }
     }
 

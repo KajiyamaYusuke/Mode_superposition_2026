@@ -28,6 +28,9 @@ void State::initialize(int nPoints_, int nModes_, int nSteps_, const Geometry& g
         vel[i].uy = 0.0 ;
         vel[i].uz = 0.0 ;
     }
+
+    std::cout << "nxsup = " << geom.nxsup << std::endl;
+    std::cout << "Last node Z coord = " << disp[geom.surfp[geom.nxsup - 1][0]].uz << std::endl;
 }
 
 void State::mode2uf(const Geometry& geom, const ModeData& modeData, int step) {
