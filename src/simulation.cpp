@@ -17,8 +17,8 @@ void Simulation::initialize() {
     params.loadFromFile("../input/param.txt", err );
     params.print();
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T2_d2_b15c4.vtu");
-    geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T2_d2.nas",68,70);
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
+    geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
 
     geomL.surfArea();
@@ -30,14 +30,14 @@ void Simulation::initialize() {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T2_d2_b15c4.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T2_d2_b15c4.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T2_d2_b15c4.vtu");
-    geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T2_d2.nas",68,70);
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b16c3.vtu");
+    geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
     geomR.surfArea();
@@ -48,8 +48,8 @@ void Simulation::initialize() {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T2_d2_b15c4.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T2_d2_b15c4.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b16c3.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b16c3.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -167,29 +167,6 @@ void Simulation::run() {
             fp << "\n";
         }
 
-        static int debug_step = 0;
-        if (debug_step < 10) {
-            // 1ループ目は新規作成(上書き)、2ループ目以降は追記(app)モードで開く
-            std::ios_base::openmode mode = (debug_step == 0) ? std::ios::out : std::ios::app;
-            std::ofstream fsDeg("../output/Degree_debug.dat", mode);
-            
-            if (fsDeg) {
-                fsDeg << "=== Step: " << debug_step << " ===" << std::endl;
-                fsDeg << "j\tdegL\t\tdegR" << std::endl; // 見出し
-                
-                int test_j = 30; // 観察したいi座標
-                // j全体のループ
-                for (int i = 1; i < geomL.nxsup - 1; ++i) {
-                    fsDeg << i << "\t" 
-                        << fCalc.degreeL[0][i][test_j] << "\t" 
-                        << fCalc.degreeR[0][i][test_j] << "\n";
-                }
-                fsDeg << std::endl;
-                fsDeg.close();
-            }
-            debug_step++;
-        }
-
         // --- 接触反復計算 ---
         for (int icont = 1; icont <= params.ncont; ++icont) {
 
@@ -300,7 +277,7 @@ void Simulation::run() {
         // 3Dモデル出力
         if (n % 20 == 0) {
             //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
-            std::cout << n << "\n";
+            //std::cout << n << "\n";
             //fCalc.outputForceVectors(n);
             num++;
         }
@@ -319,35 +296,6 @@ void Simulation::run() {
                  << "\n";
         }
         soundSignal.push_back(fCalc.Pd[9]);
-
-        if (t <= 0.5 && n%20 == 0) {
-            static int step = 0;
-            std::ostringstream filename;
-            filename << "../output_force/contact_force_" << std::setw(6) << std::setfill('0') << step << ".txt";
-            step++;
-            // そのステップ用のファイルを開く
-            std::ofstream fcOut(filename.str());
-            if (fcOut) {
-                fcOut << "Time: " << t << "\n";
-                
-                fcOut << "[Left]\n";
-                for (int i = 0; i < geomL.nxsup; ++i) {
-                    for (int j = 0; j < geomL.nsurfz; ++j) {
-                        fcOut << std::scientific << fCalc.contactForceL_ij[i][j] << " ";
-                    }
-                    fcOut << "\n";
-                }
-                
-                fcOut << "[Right]\n";
-                for (int i = 0; i < geomR.nxsup; ++i) {
-                    for (int j = 0; j < geomR.nsurfz; ++j) {
-                        fcOut << std::scientific << fCalc.contactForceR_ij[i][j] << " ";
-                    }
-                    fcOut << "\n";
-                }
-                fcOut.close(); // 書き終わったら閉じる
-            }
-        }
         
     }
 

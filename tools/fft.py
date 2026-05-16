@@ -20,7 +20,7 @@ data = np.loadtxt(filename, comments='#')
 pressure = data[:, 1]
 
 # 時間切り出し (0.15s - 0.4s)
-t_start = 0.1
+t_start = 0.05
 t_end   = 0.4
 start_idx = int(t_start / dt)
 end_idx   = int(t_end / dt)

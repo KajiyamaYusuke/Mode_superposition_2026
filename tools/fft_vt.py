@@ -17,7 +17,7 @@ try:
     data = np.loadtxt(filename, comments='#')
     pressure = data[:, 1]
     
-    t_start = 0.15  # 開始時間 (秒)
+    t_start = 0.1  # 開始時間 (秒)
     t_end   = 0.4   # 終了時間 (秒)
 
     # 時間をインデックス（配列の何番目か）に変換
