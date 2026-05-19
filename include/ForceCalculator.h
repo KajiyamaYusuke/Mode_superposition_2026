@@ -1,5 +1,6 @@
 
 #pragma once
+#include <fstream>
 #include <vector>
 #include "Geometry.h"
 #include "ModeData.h"
@@ -74,6 +75,7 @@ private:
     double lg; // 声門長 (depth)
 
     bool hasVocalTract;
+    std::ofstream debugForceFile;
 
     const Geometry& geomL;
     const Geometry& geomR;

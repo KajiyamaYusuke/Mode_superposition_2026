@@ -118,10 +118,13 @@ void ForceCalculator::initialize() {
     contactForceL_ij.resize(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0));
     contactForceR_ij.resize(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
-    std::ofstream initDebugFile("../output/debug_force.txt", std::ios::trunc);
-    if (initDebugFile) {
-        initDebugFile << "=== Debug Force Log Initialized ===\n";
-        initDebugFile.close();
+    harea.assign(nxsup, 0.0);
+    degreeL.assign(2, std::vector<std::vector<double>>(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0)));
+    degreeR.assign(2, std::vector<std::vector<double>>(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0)));
+
+    debugForceFile.open("../output/debug_force.txt", std::ios::trunc);
+    if (debugForceFile) {
+        debugForceFile << "=== Debug Force Log Initialized ===\n";
     }
     
     std::cout << "[ForceCalculator] initialized (Asymmetric): "
@@ -138,13 +141,15 @@ void ForceCalculator::calcForce(double t, int n) {
     int nsurfz = geomL.nsurfz;
     int nxsup  = geomL.nxsup;
 
-    fxL.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fyL.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fzL.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+    for (int i = 0; i < nsurfl; ++i) {
+        std::fill(fxL[i].begin(), fxL[i].end(), 0.0);
+        std::fill(fyL[i].begin(), fyL[i].end(), 0.0);
+        std::fill(fzL[i].begin(), fzL[i].end(), 0.0);
 
-    fxR.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fyR.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
-    fzR.assign(nsurfl, std::vector<double>(nsurfz, 0.0));
+        std::fill(fxR[i].begin(), fxR[i].end(), 0.0);
+        std::fill(fyR[i].begin(), fyR[i].end(), 0.0);
+        std::fill(fzR[i].begin(), fzR[i].end(), 0.0);
+    }
 
     for (int i = 0; i < nxsup; i++) {
         for (int j = 0; j < nsurfz - 1; j++) {
@@ -183,12 +188,10 @@ void ForceCalculator::calcForce(double t, int n) {
         std::fill(psurf.begin(), psurf.end(), 0.0);
         psurf[0] = currentPg;
 
-        std::ofstream debugFile("../output/debug_force.txt", std::ios::app);
-        if(debugFile){
-            debugFile << "Step: " << std::setw(4) << n 
-                      << " | minA: " << std::scientific << std::setprecision(12) << minA 
-                      << " | subPg: " << std::scientific << std::setprecision(12) << currentPg  << "\n";
-            debugFile.close();
+        if(debugForceFile){
+            debugForceFile << "Step: " << std::setw(4) << n 
+                           << " | minA: " << std::scientific << std::setprecision(12) << minA 
+                           << " | subPg: " << std::scientific << std::setprecision(12) << currentPg  << "\n";
         }
 
         if (minA > 1e-6) {
@@ -291,31 +294,37 @@ void ForceCalculator::calcForce(double t, int n) {
 void ForceCalculator::f2mode() {
 
     for (int imode = 0; imode < modeDataL.nModes; imode++) {
-        fiL[imode] = 0.0;
+        double force = 0.0;
+        const auto& mode = modeDataL.modes[imode];
         for (int i = 0; i < geomL.nsurfl; i++) {
             for (int j = 0; j < geomL.nsurfz; j++) {
                 int pid = geomL.surfp[i][j];
                 if (pid < 0) continue; // 節点が存在しない場合スキップ
 
-                fiL[imode] += fxL[i][j] * modeDataL.modes[imode][pid].ux
-                            + fyL[i][j] * modeDataL.modes[imode][pid].uy
-                            + fzL[i][j] * modeDataL.modes[imode][pid].uz;
+                const auto& modeAtPoint = mode[pid];
+                force += fxL[i][j] * modeAtPoint.ux
+                       + fyL[i][j] * modeAtPoint.uy
+                       + fzL[i][j] * modeAtPoint.uz;
             }
         }
+        fiL[imode] = force;
     }
 
     for (int imode = 0; imode < modeDataR.nModes; imode++) {
-        fiR[imode] = 0.0;
+        double force = 0.0;
+        const auto& mode = modeDataR.modes[imode];
         for (int i = 0; i < geomR.nsurfl; i++) {
             for (int j = 0; j < geomR.nsurfz; j++) {
                 int pid = geomR.surfp[i][j];
                 if (pid < 0) continue; // 節点が存在しない場合スキップ
 
-                fiR[imode] += fxR[i][j] * modeDataR.modes[imode][pid].ux
-                            + fyR[i][j] * modeDataR.modes[imode][pid].uy
-                            + fzR[i][j] * modeDataR.modes[imode][pid].uz;
+                const auto& modeAtPoint = mode[pid];
+                force += fxR[i][j] * modeAtPoint.ux
+                       + fyR[i][j] * modeAtPoint.uy
+                       + fzR[i][j] * modeAtPoint.uz;
             }
         }
+        fiR[imode] = force;
     }
 }
 // void ForceCalculator::contactForce() {
@@ -363,7 +372,7 @@ void ForceCalculator::calcArea() {
     // 左右どちらかのメッシュサイズを基準とする（今回は左を基準）
     if (geomL.nxsup < 2 || geomL.nsurfz < 2) return;
 
-    harea.assign(geomL.nxsup, 0.0);
+    std::fill(harea.begin(), harea.end(), 0.0);
     
     for (int i = 0; i < geomL.nxsup; ++i) {
         double hi = 0.0;
@@ -416,8 +425,16 @@ void ForceCalculator::calcArea() {
     }
 
 
-    degreeL.assign(2, std::vector<std::vector<double>>(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0)));
-    degreeR.assign(2, std::vector<std::vector<double>>(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0)));
+    for (auto& anglePlane : degreeL) {
+        for (auto& row : anglePlane) {
+            std::fill(row.begin(), row.end(), 0.0);
+        }
+    }
+    for (auto& anglePlane : degreeR) {
+        for (auto& row : anglePlane) {
+            std::fill(row.begin(), row.end(), 0.0);
+        }
+    }
 
     for (int i = 1; i < geomL.nxsup - 1; ++i) {
         for (int j = 1; j < geomL.nsurfz - 1; ++j) {

@@ -37,29 +37,36 @@ void State::mode2uf(const Geometry& geom, const ModeData& modeData, int step) {
     if (step < 0 || step >= nSteps) return;
 
     for (int i = 0; i < nPoints; ++i) {
-        predictedDisp[i].ux = 0.0;
-        predictedDisp[i].uy = 0.0;
-        predictedDisp[i].uz = 0.0;
+        double predUx = 0.0;
+        double predUy = 0.0;
+        double predUz = 0.0;
 
-        vel[i].ux = 0.0;
-        vel[i].uy = 0.0;
-        vel[i].uz = 0.0;
+        double velUx = 0.0;
+        double velUy = 0.0;
+        double velUz = 0.0;
 
         //std::cout<<"after_mode2uf|disp[1]= "<<disp[1].ux<<std::endl;
 
         for (int m = 0; m < nModes; ++m) {
             double qi = qf[m];
-            predictedDisp[i].ux += modeData.modes[m][i].ux * qi* 1.0e3;
-            predictedDisp[i].uy += modeData.modes[m][i].uy * qi* 1.0e3;
-            predictedDisp[i].uz += modeData.modes[m][i].uz * qi* 1.0e3;
+            double qdi = qfdot[m];
+            const auto& modeAtPoint = modeData.modes[m][i];
 
-            vel[i].ux += modeData.modes[m][i].ux * qfdot[m] * 1.0e3;
-            vel[i].uy += modeData.modes[m][i].uy * qfdot[m]* 1.0e3;
-            vel[i].uz += modeData.modes[m][i].uz * qfdot[m]* 1.0e3;
+            predUx += modeAtPoint.ux * qi* 1.0e3;
+            predUy += modeAtPoint.uy * qi* 1.0e3;
+            predUz += modeAtPoint.uz * qi* 1.0e3;
+
+            velUx += modeAtPoint.ux * qdi * 1.0e3;
+            velUy += modeAtPoint.uy * qdi* 1.0e3;
+            velUz += modeAtPoint.uz * qdi* 1.0e3;
         }
-        predictedDisp[i].ux += geom.points[i].x ;
-        predictedDisp[i].uy += geom.points[i].y ;
-        predictedDisp[i].uz += geom.points[i].z ;
+        predictedDisp[i].ux = predUx + geom.points[i].x ;
+        predictedDisp[i].uy = predUy + geom.points[i].y ;
+        predictedDisp[i].uz = predUz + geom.points[i].z ;
+
+        vel[i].ux = velUx;
+        vel[i].uy = velUy;
+        vel[i].uz = velUz;
 
     }
 
@@ -78,4 +85,3 @@ void State::uf2u() {
 
     disp = predictedDisp; 
 }
-

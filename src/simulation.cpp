@@ -36,11 +36,12 @@ void Simulation::initialize() {
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b16c3.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b48c3.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
     geomR.surfArea();
+
     geomR.jtypes[5] = 3;   // 三角形
     geomR.jtypes[9] = 4;   // 四角形
     geomR.jtypes[10] = 4;
@@ -48,8 +49,8 @@ void Simulation::initialize() {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b16c3.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b16c3.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b48c3.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b48c3.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -297,9 +298,10 @@ void Simulation::run() {
         }
         soundSignal.push_back(fCalc.Pd[9]);
         
+
     }
 
-    
+    WavWriter::save(soundSignal, params.dt, "../output/test_sound.wav");
 
     std::cout << "[Simulation] Run complete." << std::endl;
 } 
