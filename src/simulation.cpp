@@ -277,7 +277,7 @@ void Simulation::run() {
 
         // 3Dモデル出力
         if (n % 20 == 0) {
-            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
+            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             //std::cout << n << "\n";
             //fCalc.outputForceVectors(n);
             num++;
