@@ -5,6 +5,9 @@
 #include <sstream>
 #include <fstream>
 #include <cmath>
+#include <filesystem>
+#include <iomanip>
+#include <limits>
 
 auto checkNaN = [](double val, const std::string& name) {
     if (std::isnan(val) || std::isinf(val)) {
@@ -725,4 +728,107 @@ void ForceCalculator::outputForceVectors(int step) const {
     }
 
     //std::cout << "[Output] force vectors written for step " << step << std::endl;
+}
+
+void ForceCalculator::outputCorrespondenceOffsets(int step) const {
+    std::filesystem::create_directories("../output_pair_offset");
+
+    std::ostringstream stepStr;
+    stepStr << std::setw(6) << std::setfill('0') << step;
+
+    const std::string detailPath =
+        "../output_pair_offset/pair_offset_" + stepStr.str() + ".csv";
+    std::ofstream fout(detailPath);
+    fout << "step,i,j,pidL,pidR,"
+         << "xL,xR,dx_pair,dx_deformation,"
+         << "yL,yR,gap_y,zL,zR,dz_pair,"
+         << "initial_xL,initial_xR,initial_dx_pair,"
+         << "contact_force_L,contact_force_R\n";
+
+    double sumAbsDxPair = 0.0;
+    double sumAbsDxDef = 0.0;
+    double maxAbsDxPair = 0.0;
+    double maxAbsDxDef = 0.0;
+    double maxSignedDxPair = 0.0;
+    double maxSignedDxDef = 0.0;
+    int maxPairI = -1;
+    int maxPairJ = -1;
+    int maxDefI = -1;
+    int maxDefJ = -1;
+    int count = 0;
+
+    const int ni = std::min(geomL.nxsup, geomR.nxsup);
+    const int nj = std::min(geomL.nsurfz, geomR.nsurfz);
+
+    for (int i = 0; i < ni; ++i) {
+        for (int j = 0; j < nj; ++j) {
+            const int pidL = geomL.surfp[i][j];
+            const int pidR = geomR.surfp[i][j];
+            if (pidL < 0 || pidR < 0) continue;
+
+            const auto& pL0 = geomL.points[pidL];
+            const auto& pR0 = geomR.points[pidR];
+            const auto& pL = stateL.disp[pidL];
+            const auto& pR = stateR.disp[pidR];
+
+            const double initialDxPair = pR0.x - pL0.x;
+            const double dxPair = pR.ux - pL.ux;
+            const double dxDef = dxPair - initialDxPair;
+            const double gapY = pR.uy - pL.uy;
+            const double dzPair = pR.uz - pL.uz;
+
+            double forceL = 0.0;
+            double forceR = 0.0;
+            if (i < static_cast<int>(contactForceL_ij.size()) &&
+                j < static_cast<int>(contactForceL_ij[i].size())) {
+                forceL = contactForceL_ij[i][j];
+            }
+            if (i < static_cast<int>(contactForceR_ij.size()) &&
+                j < static_cast<int>(contactForceR_ij[i].size())) {
+                forceR = contactForceR_ij[i][j];
+            }
+
+            fout << step << "," << i << "," << j << ","
+                 << pidL << "," << pidR << ","
+                 << pL.ux << "," << pR.ux << ","
+                 << dxPair << "," << dxDef << ","
+                 << pL.uy << "," << pR.uy << "," << gapY << ","
+                 << pL.uz << "," << pR.uz << "," << dzPair << ","
+                 << pL0.x << "," << pR0.x << "," << initialDxPair << ","
+                 << forceL << "," << forceR << "\n";
+
+            const double absDxPair = std::abs(dxPair);
+            const double absDxDef = std::abs(dxDef);
+            sumAbsDxPair += absDxPair;
+            sumAbsDxDef += absDxDef;
+            ++count;
+
+            if (absDxPair > maxAbsDxPair) {
+                maxAbsDxPair = absDxPair;
+                maxSignedDxPair = dxPair;
+                maxPairI = i;
+                maxPairJ = j;
+            }
+            if (absDxDef > maxAbsDxDef) {
+                maxAbsDxDef = absDxDef;
+                maxSignedDxDef = dxDef;
+                maxDefI = i;
+                maxDefJ = j;
+            }
+        }
+    }
+
+    std::ofstream summary("../output_pair_offset/pair_offset_summary.csv", std::ios::app);
+    if (summary.tellp() == 0) {
+        summary << "step,count,mean_abs_dx_pair,max_abs_dx_pair,max_signed_dx_pair,max_pair_i,max_pair_j,"
+                << "mean_abs_dx_deformation,max_abs_dx_deformation,max_signed_dx_deformation,max_def_i,max_def_j\n";
+    }
+
+    const double meanAbsDxPair = count > 0 ? sumAbsDxPair / count : 0.0;
+    const double meanAbsDxDef = count > 0 ? sumAbsDxDef / count : 0.0;
+    summary << step << "," << count << ","
+            << meanAbsDxPair << "," << maxAbsDxPair << "," << maxSignedDxPair << ","
+            << maxPairI << "," << maxPairJ << ","
+            << meanAbsDxDef << "," << maxAbsDxDef << "," << maxSignedDxDef << ","
+            << maxDefI << "," << maxDefJ << "\n";
 }

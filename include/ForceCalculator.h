@@ -22,6 +22,7 @@ public:
     void calcArea();
     void f2mode();
     void outputForceVectors(int step) const;
+    void outputCorrespondenceOffsets(int step) const;
 
     std::vector<std::vector<double>> fxL, fyL, fzL;
     std::vector<std::vector<double>> fdisL; // 左の接触力バッファ

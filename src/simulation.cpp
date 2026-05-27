@@ -145,6 +145,7 @@ void Simulation::run() {
         soundSignal.reserve(params.nstep);
 
     writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 1);
+    fCalc.outputCorrespondenceOffsets(0);
     num++;
     std::cout << "[Simulation] Output step 0 (Initial State)." << std::endl;
 
@@ -236,6 +237,9 @@ void Simulation::run() {
         // 状態の確定
         stateL.uf2u();
         stateR.uf2u();
+        if (n % 20 == 0) {
+            fCalc.outputCorrespondenceOffsets(n + 1);
+        }
 
         if (n >= 200 && n <= 400) {
             std::ofstream dbgFile("../output/debug_step20_30.txt", std::ios::app);
