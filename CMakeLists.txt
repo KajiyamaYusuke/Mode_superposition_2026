@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
+option(PROFILE_CALCDIS "Enable calcDis profiling output" OFF)
+
 project(Simulation LANGUAGES CXX)
 
 set(CMAKE_CXX_COMPILER icpx)
@@ -22,5 +24,9 @@ add_executable(simulation
     src/main.cpp          # main を含むファイル
 )
 
+
+if(PROFILE_CALCDIS)
+    target_compile_definitions(simulation PRIVATE PROFILE_CALCDIS)
+endif()
 
 

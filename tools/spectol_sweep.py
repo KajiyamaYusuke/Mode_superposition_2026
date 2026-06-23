@@ -16,7 +16,7 @@ OUTPUT_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/airflow_vt.dat
 DISP_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/displace.dat"  # ★追加：変位データ
 
 # スイープする圧力のリスト (Pa)
-pressure_list = [900, 1000, 1100, 1200, 1300, 1400]
+pressure_list = [1000, 1100, 1200]
 
 # 解析設定
 sim_dt = 1.0e-5

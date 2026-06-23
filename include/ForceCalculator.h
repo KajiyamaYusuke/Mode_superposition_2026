@@ -1,5 +1,6 @@
 
 #pragma once
+#include <array>
 #include <fstream>
 #include <vector>
 #include "Geometry.h"
@@ -18,11 +19,14 @@ public:
     
     // 追加: 接触力計算など既存の関数
     void contactForce();
-    void calcDis();
+    void calcDis(int step = -1, int contactIter = -1);
     void calcArea();
     void f2mode();
     void outputForceVectors(int step) const;
     void outputCorrespondenceOffsets(int step) const;
+
+    std::vector<std::array<double,3>> traceL;
+    std::vector<std::array<double,3>> traceR;
 
     std::vector<std::vector<double>> fxL, fyL, fzL;
     std::vector<std::vector<double>> fdisL; // 左の接触力バッファ
@@ -44,6 +48,10 @@ public:
     std::vector<double> Ud; // Downstream (Vocal Tract) flow
     std::vector<double> Pd; // Downstream (Vocal Tract) pressure
 
+    std::vector<std::vector<double>> prevFdisXL;
+    std::vector<std::vector<double>> prevFdisYL;
+    std::vector<std::vector<double>> prevFdisXR;
+    std::vector<std::vector<double>> prevFdisYR;
 
     bool contactFlag;
 
@@ -53,6 +61,13 @@ public:
 
     std::vector<std::vector<double>> contactForceL_ij;
     std::vector<std::vector<double>> contactForceR_ij;
+
+    std::vector<std::array<double,3>> lineStartL;
+    std::vector<std::array<double,3>> lineEndL;
+    std::vector<std::vector<double>> fdisXL, fdisYL;
+    std::vector<std::vector<double>> fdisXR, fdisYR;
+
+    void resetPreviousContactForce();
 
 private:
     // Ishizaka & Flanagan (1972) モデル用
@@ -77,6 +92,7 @@ private:
 
     bool hasVocalTract;
     std::ofstream debugForceFile;
+    std::ofstream contactDebugFile;
 
     const Geometry& geomL;
     const Geometry& geomR;
@@ -89,4 +105,6 @@ private:
 
     double findMinHarea();
     int findNsep(double minH);
+    int findNearestRightSurfacePointSameJ(int leftI, int j) const;
+
 };

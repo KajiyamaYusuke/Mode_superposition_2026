@@ -29,4 +29,5 @@ public:
     void writeVTKCombined(int step, const Geometry& geomL, const State& stateL, 
                       const Geometry& geomR, const State& stateR, 
                       const std::string& rdir, int nwrite);
+    
 };

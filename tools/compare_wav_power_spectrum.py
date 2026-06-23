@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         type=Path,
         default=REPO_ROOT / "output" / "subject2.wav",
-        help="Second WAV file. Default: output/subject1.wav",
+        help="Second WAV file. Default: output/subject2.wav",
     )
     parser.add_argument(
         "-o",
