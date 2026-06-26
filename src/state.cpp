@@ -17,12 +17,14 @@ void State::initialize(int nPoints_, int nModes_, int nSteps_, const Geometry& g
     predictedDisp.assign(nPoints, Displacement());
     vel.assign(nPoints, Displacement());
 
+    #pragma omp parallel for schedule(static)
     for(int i = 0; i < nPoints; i++){
         disp[i].ux = 0.0 + geom.points[i].x;
         disp[i].uy = 0.0 + geom.points[i].y;
         disp[i].uz = 0.0 + geom.points[i].z;
     }
 
+    #pragma omp parallel for schedule(static)
     for(int i = 0; i < nPoints; i++){
         vel[i].ux = 0.0 ;
         vel[i].uy = 0.0 ;
@@ -36,6 +38,7 @@ void State::initialize(int nPoints_, int nModes_, int nSteps_, const Geometry& g
 void State::mode2uf(const Geometry& geom, const ModeData& modeData, int step) {
     if (step < 0 || step >= nSteps) return;
 
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < nPoints; ++i) {
         double predUx = 0.0;
         double predUy = 0.0;

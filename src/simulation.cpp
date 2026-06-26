@@ -6,6 +6,14 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+#include <array>
+#include <string>
+#include <limits>
+
 
 
 
@@ -70,10 +78,12 @@ void Simulation::initialize() {
     double ymid = geomR.ymid[0]; 
 
     // ① ジオメトリのYを反転
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < geomR.nPoints; ++i) {
         geomR.points[i].y = 2.0 * ymid - geomR.points[i].y;
     }
 
+    #pragma omp parallel for collapse(2) schedule(static)
     for (int m = 0; m < mdataR.nModes; ++m) {
         for (int i = 0; i < geomR.nPoints; ++i) {
             mdataR.modes[m][i].uy = -mdataR.modes[m][i].uy; 
@@ -83,13 +93,6 @@ void Simulation::initialize() {
     stateR.initialize(geomR.nPoints, params.nmode, params.nstep, geomR);
 
     fCalc.initialize();
-
-    std::ofstream initDbg("../output/debug_step20_30.txt", std::ios::trunc);
-    if (initDbg) {
-        initDbg << "=== Detailed Parameter Log (Steps 20-30) ===\n";
-        initDbg.close();
-    }
-
 
     std::cout << "[Simulation] Initialization complete." << std::endl;
 }
@@ -140,19 +143,11 @@ void Simulation::run() {
     std::ofstream fa("../output/area.dat");
     std::ofstream fu("../output/displace.dat");
     std::ofstream fp("../output/pressure.dat");
-    std::ofstream ff("../output/modeforce.dat");
     std::ofstream fpv("../output/pressure_vt.dat");
     std::ofstream fuv("../output/airflow_vt.dat");
 
-    std::ofstream fdbg("../output/debug_fluid.dat");
-    std::ofstream fcOut("../output_force/contact_force_matrix.dat");
-    std::ofstream contactIterDbg("../output/contact_iteration_debug.csv");
-    fdbg << "# step time currentUg Pd[0] Pu_last minHarea\n";
-    contactIterDbg
-        << "step,iter,max_abs_fiL,max_abs_fiR,"
-        << "max_abs_qL,max_abs_qR,max_abs_qdotL,max_abs_qdotR,"
-        << "max_abs_qddotL,max_abs_qddotR,max_abs_node_dispL,"
-        << "max_abs_node_dispR,max_force_diff,contactFlag\n";
+    //std::ofstream fdbg("../output/debug_fluid.dat");
+    //std::ofstream contactIterDbg("../output/contact_iteration_debug.csv");
 
     fa << "# x[m]  area[m^2]\n";
     fu << "# x[m]  displaceL displaceR\n";
@@ -234,7 +229,6 @@ void Simulation::run() {
     };
 
     //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 1);
-    fCalc.outputCorrespondenceOffsets(0);
     //num++;
     std::cout << "[Simulation] Output step 0 (Initial State)." << std::endl;
 
@@ -284,11 +278,27 @@ void Simulation::run() {
             time_f2mode += elapsed_ms(t0, t1);}
             total_f2mode_calls++;
 
+            
+            // if (n % 10 == 0) {
+            //     std::cout << std::scientific << std::setprecision(12)
+            //         << "step=" << n
+            //         << " fiL0=" << fCalc.fiL[0]
+            //         << " qL0=" << stateL.q[0]
+            //         << " qdotL0=" << stateL.qdot[0]
+            //         << " powerL0=" << fCalc.fiL[0] * stateL.qdot[0]
+            //         << " fiR0=" << fCalc.fiR[0]
+            //         << " qR0=" << stateR.q[0]
+            //         << " qdotR0=" << stateR.qdot[0]
+            //         << " powerR0=" << fCalc.fiR[0] * stateR.qdot[0]
+            //         << std::endl;
+            // }
+
             // Newmark parameters
             const double newmark_beta  = 0.275625;
             const double newmark_gamma = 0.55;
 
             // 2. 時間積分 (左声帯 L)
+            #pragma omp parallel for schedule(static)
             for (int i = 0; i < mdataL.nModes; ++i) {
                 double f    = fCalc.fiL[i];                      
                 double q    = stateL.q[i];                       
@@ -307,6 +317,7 @@ void Simulation::run() {
             
 
             // 3. 時間積分 (右声帯 R)
+            #pragma omp parallel for schedule(static)
             for (int i = 0; i < mdataR.nModes; ++i) {
                 double f    = fCalc.fiR[i];                      
                 double q    = stateR.q[i];                       
@@ -338,23 +349,6 @@ void Simulation::run() {
 	            auto t1 = now();
 	            time_calcDis += elapsed_ms(t0, t1);}
 	            total_calcDis_calls++;
-
-            if (n >= 7600 && n <= 8120 && contactIterDbg) {
-                contactIterDbg
-                    << n << "," << icont << ","
-                    << maxAbsVector(fCalc.fiL) << ","
-                    << maxAbsVector(fCalc.fiR) << ","
-                    << maxAbsVector(stateL.qf) << ","
-                    << maxAbsVector(stateR.qf) << ","
-                    << maxAbsVector(stateL.qfdot) << ","
-                    << maxAbsVector(stateR.qfdot) << ","
-                    << maxAbsVector(stateL.qfddot) << ","
-                    << maxAbsVector(stateR.qfddot) << ","
-                    << maxAbsNodeDisp(geomL, stateL) << ","
-                    << maxAbsNodeDisp(geomR, stateR) << ","
-                    << fCalc.max_force_diff << ","
-                    << (fCalc.contactFlag ? 1 : 0) << "\n";
-            }
             
             // 収束判定
             if (fCalc.contactFlag && fCalc.max_force_diff < 1.0e-6) { 
@@ -392,53 +386,12 @@ void Simulation::run() {
         // fCalc.traceR.push_back({stateR.disp[nearestIdxR].ux, stateR.disp[nearestIdxR].uy, stateR.disp[nearestIdxR].uz});
 
 {        auto t0 = now();
-        if (n % 20 == 0) {
-            fCalc.outputCorrespondenceOffsets(n + 1);
-        }
-
-        if (n >= 200 && n <= 400) {
-            std::ofstream dbgFile("../output/debug_step20_30.txt", std::ios::app);
-            if (dbgFile) {
-                // 小数点以下12桁まで高精度で出力し、微小なズレを逃さない
-                dbgFile << std::scientific << std::setprecision(12);
-                dbgFile << "================ Step " << n << " ================\n";
-                
-                // 1. 流体力学の主要パラメータ
-                dbgFile << "[Fluid]\n";
-                dbgFile << "  minHarea  : " << fCalc.minHarea[n] << "\n";
-                dbgFile << "  currentUg : " << fCalc.currentUg << "\n";
-                dbgFile << "  currentPg : " << fCalc.currentPg << "\n";
-                // 圧力分布の代表点（メッシュ中央付近）
-                int mid_i = geomL.nxsup / 2;
-                dbgFile << "  psurf[mid]: " << fCalc.psurf[mid_i] << "\n";
-
-                // 2. モード力と構造力学（1次モード代表）
-                dbgFile << "[Structure - Mode 0]\n";
-                dbgFile << "  fiL[0]    : " << fCalc.fiL[0] << "\n";
-                dbgFile << "  qL[0]     : " << stateL.q[0] << "\n";
-                dbgFile << "  qdotL[0]  : " << stateL.qdot[0] << "\n";
-                dbgFile << "  qddotL[0] : " << stateL.qddot[0] << "\n";
-
-                // 3. 実際の節点変位（モニター用の nearestIdxL を使用）
-                dbgFile << "[Nodal Displacement (nearestIdxL)]\n";
-                dbgFile << "  dispL.uy  : " << stateL.disp[nearestIdxL].uy << "\n";
-                // 速度や予測変位も確認
-                dbgFile << "  velL.uy   : " << stateL.vel[nearestIdxL].uy << "\n";
-                
-                // 4. 接触とループ制御
-                dbgFile << "[System]\n";
-                dbgFile << "  contact   : " << (fCalc.contactFlag ? "TRUE" : "FALSE") << "\n";
-                
-                dbgFile << "---------------------------------------\n";
-                dbgFile.close();
-            }
-        }
 
         // 3Dモデル出力
         if (n % 20 == 0) {
             //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             //writeLineVTK(fCalc.lineStartL, fCalc.lineEndL, num);
-            //std::cout << n << "\n";
+            std::cout << n << "\n";
             //fCalc.outputForceVectors(n);
             // writePointVTK(
             //     stateL.disp[nearestIdxL].ux,
@@ -456,14 +409,6 @@ void Simulation::run() {
         if (n % 5 == 0) {
             fpv << std::setw(4) << n << " " << std::setw(8) << fCalc.Pd[9] << "\n";
             fuv << std::setw(4) << n << " " << std::setw(8) << fCalc.currentUg << "\n";
-
-            fdbg << std::setw(6) << n 
-                 << " " << std::setw(12) << t 
-                 << " " << std::setw(12) << fCalc.currentUg 
-                 << " " << std::setw(12) << fCalc.Pd[0]     
-                 << " " << std::setw(12) << fCalc.Pu[params.N_sub] 
-                 << " " << std::setw(12) << fCalc.minHarea[n] 
-                 << "\n";
         }
         soundSignal.push_back(fCalc.Pd[9]);
         auto t1 = now();

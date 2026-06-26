@@ -4,7 +4,7 @@
 # number of points along z-axis(nsurfz)
 18
 # number of step nstep
-15000
+20000
 # output interval nwrite
 20
 # time step for time integration dt
@@ -28,13 +28,13 @@ result
 # kind of external force (iforce)
 0
 # subglottal pressure Ps (Pa)
-800
+1300
 # air density (kg/m3)
 1.13
 # air viscousity (Pa s)
 1.80000E-5
 # mass of vocal fold (kg)
-1.0608E-3
+1.07155257E-3
 # verocity of sounds (m/s)
 343.0
 

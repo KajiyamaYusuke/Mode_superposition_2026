@@ -8,6 +8,11 @@
 #include <cmath>
 #include <set>
 #include <iomanip>
+#include <unordered_map>
+#include <unordered_set>
+#include <queue>
+#include <limits>
+#include <numeric>
 
 inline bool isSamePointRounded(double x1, double y1, double z1,
                                double x2, double y2, double z2,
@@ -17,6 +22,297 @@ inline bool isSamePointRounded(double x1, double y1, double z1,
     double dy = y1 - y2;
     double dz = z1 - z2;
     return (dx * dx + dy * dy + dz * dz) < (eps * eps);
+}
+
+static std::string trim(const std::string& s) {
+    size_t b = s.find_first_not_of(" \t\r\n");
+    size_t e = s.find_last_not_of(" \t\r\n");
+    if (b == std::string::npos) return "";
+    return s.substr(b, e - b + 1);
+}
+
+static std::vector<std::string> splitComma(const std::string& line) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(line);
+    std::string t;
+
+    while (std::getline(ss, t, ',')) {
+        tokens.push_back(trim(t));
+    }
+
+    return tokens;
+}
+
+static std::vector<double> makeLevels(std::vector<double> values, double tol) {
+    std::sort(values.begin(), values.end());
+
+    std::vector<double> levels;
+    std::vector<double> cluster;
+
+    for (double v : values) {
+        if (cluster.empty()) {
+            cluster.push_back(v);
+        } else if (std::abs(v - cluster.back()) <= tol) {
+            cluster.push_back(v);
+        } else {
+            double sum = 0.0;
+            for (double c : cluster) sum += c;
+            levels.push_back(sum / cluster.size());
+
+            cluster.clear();
+            cluster.push_back(v);
+        }
+    }
+
+    if (!cluster.empty()) {
+        double sum = 0.0;
+        for (double c : cluster) sum += c;
+        levels.push_back(sum / cluster.size());
+    }
+
+    return levels;
+}
+
+static int nearestLevel(const std::vector<double>& levels, double v, double tol) {
+    int best = -1;
+    double bestDist = std::numeric_limits<double>::max();
+
+    for (int i = 0; i < static_cast<int>(levels.size()); ++i) {
+        double d = std::abs(levels[i] - v);
+        if (d < bestDist) {
+            bestDist = d;
+            best = i;
+        }
+    }
+
+    if (bestDist > tol) return -1;
+    return best;
+}
+
+static std::vector<int> traceAllComponentsAsOneRow(
+    const std::unordered_map<int, std::set<int>>& adj,
+    const std::vector<int>& allNodes,
+    const std::vector<Point>& points)
+{
+    std::vector<int> result;
+
+    if (allNodes.empty()) return result;
+
+    std::unordered_set<int> allSet(allNodes.begin(), allNodes.end());
+    std::unordered_set<int> visitedAll;
+
+    std::vector<std::vector<int>> components;
+
+    // ------------------------
+    // 1. 連結成分を抽出
+    // ------------------------
+    for (int start : allNodes) {
+        if (visitedAll.count(start)) continue;
+
+        std::vector<int> comp;
+        std::vector<int> stack;
+
+        stack.push_back(start);
+        visitedAll.insert(start);
+
+        while (!stack.empty()) {
+            int cur = stack.back();
+            stack.pop_back();
+
+            comp.push_back(cur);
+
+            auto it = adj.find(cur);
+            if (it == adj.end()) continue;
+
+            for (int nb : it->second) {
+                if (!allSet.count(nb)) continue;
+
+                if (!visitedAll.count(nb)) {
+                    visitedAll.insert(nb);
+                    stack.push_back(nb);
+                }
+            }
+        }
+
+        components.push_back(comp);
+    }
+
+    if (components.empty()) return result;
+
+    if (components.size() > 1) {
+        std::cout << "[trace WARN] components=" << components.size()
+                  << " sizes=";
+        for (const auto& c : components) {
+            std::cout << c.size() << " ";
+        }
+        std::cout << "\n";
+    }
+
+    auto dist2 = [&](int a, int b) {
+        double dx = points[a].x - points[b].x;
+        double dy = points[a].y - points[b].y;
+        double dz = points[a].z - points[b].z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+
+    // ------------------------
+    // 2. 各成分を1本のポリラインとして並べる
+    // ------------------------
+    std::vector<std::vector<int>> orderedComps;
+
+    for (const auto& comp : components) {
+        std::unordered_set<int> compSet(comp.begin(), comp.end());
+
+        std::vector<int> endpoints;
+
+        for (int p : comp) {
+            int deg = 0;
+
+            auto it = adj.find(p);
+            if (it != adj.end()) {
+                for (int nb : it->second) {
+                    if (compSet.count(nb)) ++deg;
+                }
+            }
+
+            if (deg <= 1) {
+                endpoints.push_back(p);
+            }
+        }
+
+        int start = comp[0];
+
+        if (!endpoints.empty()) {
+            start = endpoints[0];
+
+            // とりあえず x が小さい端点から開始
+            for (int p : endpoints) {
+                if (points[p].x < points[start].x) {
+                    start = p;
+                }
+            }
+        } else {
+            // 閉ループなど。x最小点から開始
+            for (int p : comp) {
+                if (points[p].x < points[start].x) {
+                    start = p;
+                }
+            }
+        }
+
+        std::vector<int> ordered;
+        std::unordered_set<int> visited;
+
+        int prev = -1;
+        int cur = start;
+
+        while (cur >= 0) {
+            ordered.push_back(cur);
+            visited.insert(cur);
+
+            auto it = adj.find(cur);
+            if (it == adj.end()) break;
+
+            int next = -1;
+            double bestD2 = std::numeric_limits<double>::max();
+
+            for (int nb : it->second) {
+                if (!compSet.count(nb)) continue;
+                if (nb == prev) continue;
+                if (visited.count(nb)) continue;
+
+                double d = dist2(cur, nb);
+                if (d < bestD2) {
+                    bestD2 = d;
+                    next = nb;
+                }
+            }
+
+            prev = cur;
+            cur = next;
+        }
+
+        // 取りこぼした孤立点・分岐点があれば末尾に追加
+        if (ordered.size() != comp.size()) {
+            for (int p : comp) {
+                if (!visited.count(p)) {
+                    ordered.push_back(p);
+                }
+            }
+        }
+
+        orderedComps.push_back(ordered);
+    }
+
+    // ------------------------
+    // 3. 成分同士を端点距離が近い順につなぐ
+    // ------------------------
+    std::vector<bool> used(orderedComps.size(), false);
+
+    // 最初の成分：先頭点の x が一番小さいもの
+    int currentComp = -1;
+    double minX = std::numeric_limits<double>::max();
+
+    for (int c = 0; c < static_cast<int>(orderedComps.size()); ++c) {
+        if (orderedComps[c].empty()) continue;
+
+        int p0 = orderedComps[c].front();
+        if (points[p0].x < minX) {
+            minX = points[p0].x;
+            currentComp = c;
+        }
+    }
+
+    if (currentComp < 0) return result;
+
+    result = orderedComps[currentComp];
+    used[currentComp] = true;
+
+    while (true) {
+        int last = result.back();
+
+        int bestComp = -1;
+        bool reverseBest = false;
+        double bestD2 = std::numeric_limits<double>::max();
+
+        for (int c = 0; c < static_cast<int>(orderedComps.size()); ++c) {
+            if (used[c]) continue;
+            if (orderedComps[c].empty()) continue;
+
+            int front = orderedComps[c].front();
+            int back  = orderedComps[c].back();
+
+            double dFront = dist2(last, front);
+            double dBack  = dist2(last, back);
+
+            if (dFront < bestD2) {
+                bestD2 = dFront;
+                bestComp = c;
+                reverseBest = false;
+            }
+
+            if (dBack < bestD2) {
+                bestD2 = dBack;
+                bestComp = c;
+                reverseBest = true;
+            }
+        }
+
+        if (bestComp < 0) break;
+
+        if (reverseBest) {
+            std::reverse(orderedComps[bestComp].begin(),
+                         orderedComps[bestComp].end());
+        }
+
+        result.insert(result.end(),
+                      orderedComps[bestComp].begin(),
+                      orderedComps[bestComp].end());
+
+        used[bestComp] = true;
+    }
+
+    return result;
 }
 
 struct gridpoint {
@@ -354,22 +650,37 @@ void Geometry::surfArea() {
 
     sarea.assign(nxsup, std::vector<double>(nsurfz-1, 0.0));
 
-    for (int i = 1; i < nxsup-1; ++i) {            // Fortran: 2..nxsup-1
-        for (int j = 1; j < nsurfz-1; ++j) {  // Fortran: 2..nsurfz-1
+    for (int i = 1; i < nxsup - 1; ++i) {
+        for (int j = 1; j < nsurfz - 1; ++j) {
             int pid_left  = surfp[i-1][j];
             int pid_right = surfp[i+1][j];
             int pid_down  = surfp[i][j-1];
             int pid_up    = surfp[i][j+1];
 
-            if (pid_left < 0 || pid_right < 0 || pid_down < 0 || pid_up < 0) continue;
+            if (pid_left < 0 || pid_right < 0 || pid_down < 0 || pid_up < 0) {
+                continue;
+            }
 
-            double dx = 0.5 * (points[pid_right].x - points[pid_left].x);
-            double dy = 0.5 * (points[pid_right].y - points[pid_left].y);
-            double ds = std::sqrt(dx*dx + dy*dy);
-            double dz = 0.5 * (points[pid_up].z - points[pid_down].z);
-            sarea[i][j] = ds * dz;
-        }   
-    }   
+            const auto& pL = points[pid_left];
+            const auto& pR = points[pid_right];
+            const auto& pD = points[pid_down];
+            const auto& pU = points[pid_up];
+
+            double ti_x = 0.5 * (pR.x - pL.x);
+            double ti_y = 0.5 * (pR.y - pL.y);
+            double ti_z = 0.5 * (pR.z - pL.z);
+
+            double tj_x = 0.5 * (pU.x - pD.x);
+            double tj_y = 0.5 * (pU.y - pD.y);
+            double tj_z = 0.5 * (pU.z - pD.z);
+
+            double cx = ti_y * tj_z - ti_z * tj_y;
+            double cy = ti_z * tj_x - ti_x * tj_z;
+            double cz = ti_x * tj_y - ti_y * tj_x;
+
+            sarea[i][j] = std::sqrt(cx * cx + cy * cy + cz * cz);
+        }
+    }
 
     std::ofstream fsA("../output/SurfArea.dat");
     
@@ -381,125 +692,540 @@ void Geometry::surfArea() {
     }
 }
 
-void Geometry::surfExtractFromNAS(const std::string& nasFile, int nsurfl_param, int nsurfz_param) {
+void Geometry::surfExtractFromNAS(
+    const std::string& nasFile,
+    int nsurfl_param,
+    int nsurfz_param)
+{
     std::ifstream ifs(nasFile);
-    if (!ifs) throw std::runtime_error("Cannot open NAS file: " + nasFile);
+    if (!ifs) {
+        throw std::runtime_error("Cannot open NAS file: " + nasFile);
+    }
 
     nsurfl = nsurfl_param;
     nsurfz = nsurfz_param;
 
+    struct RawQuad {
+        int eid;
+        int pid;
+        int nasNode[4];
+    };
+
+    struct Quad {
+        int eid;
+        int pid;
+        int n[4]; // VTU index
+    };
+
+    // NAS node ID -> NAS座標
     std::map<int, Point> grid;
-    std::vector<std::vector<int>> quads;
+
+    // NAS ID のまま保持する CQUAD4
+    std::vector<RawQuad> rawQuads;
+
+    // VTU index に変換後の CQUAD4
+    std::vector<Quad> quads;
 
     std::string line;
+
+    int gridLineCount = 0;
+    int quadLineCount = 0;
+
+    // ------------------------
+    // 1. NASを読む
+    // ------------------------
     while (std::getline(ifs, line)) {
+        line = trim(line);
+
+        if (line.empty()) continue;
+        if (line[0] == '$') continue;
+
         if (line.rfind("GRID", 0) == 0) {
-            std::vector<std::string> tokens;
-            std::stringstream ss(line);
-            std::string token;
+            ++gridLineCount;
 
-            while (std::getline(ss, token, ',')) {
-                tokens.push_back(token);
-            }
+            auto tokens = splitComma(line);
 
-            // "GRID,1,,0.00000,0.00000,0.00000"
-            // → tokens = ["GRID", "1", "", "0.00000", "0.00000", "0.00000"]
             if (tokens.size() >= 6) {
                 try {
                     int id = std::stoi(tokens[1]);
-                    double x = std::stod(tokens[3]);
-                    double y = std::stod(tokens[4]);
-                    double z = std::stod(tokens[5]);
-                    grid[id] = {z, x, y};
-                } catch (const std::exception& e) {
-                    std::cerr << "Failed to parse GRID line: " << line << "\n";
+
+                    double gx = std::stod(tokens[3]);
+                    double gy = std::stod(tokens[4]);
+                    double gz = std::stod(tokens[5]);
+
+                    // 重要:
+                    // ここは既存コードに合わせている。
+                    // NAS raw (gx, gy, gz) -> internal Point(x,y,z) = (gz, gx, gy)
+                    grid[id] = Point{gz, gx, gy};
+                }
+                catch (...) {
+                    std::cerr << "[NAS WARN] Failed to parse GRID line: "
+                              << line << "\n";
                 }
             }
         }
-
         else if (line.rfind("CQUAD4", 0) == 0) {
+            ++quadLineCount;
+
             std::replace(line.begin(), line.end(), ',', ' ');
             std::istringstream iss(line);
+
             std::string tag;
             int eid, pid;
             int n1, n2, n3, n4;
+
             iss >> tag >> eid >> pid >> n1 >> n2 >> n3 >> n4;
-            quads.push_back({n1, n2, n3, n4});
+
+            if (!iss) {
+                std::cerr << "[NAS WARN] Failed to parse CQUAD4 line: "
+                          << line << "\n";
+                continue;
+            }
+
+            RawQuad rq;
+            rq.eid = eid;
+            rq.pid = pid;
+            rq.nasNode[0] = n1;
+            rq.nasNode[1] = n2;
+            rq.nasNode[2] = n3;
+            rq.nasNode[3] = n4;
+
+            rawQuads.push_back(rq);
         }
     }
 
-    // すべての節点IDを一意に集める
-    std::set<int> uniqueNodes;
-    for (auto& q : quads)
-        uniqueNodes.insert(q.begin(), q.end());
-    
-    std::cout<<"uniquenodes="<<uniqueNodes.size()<<"\n";
+    // std::cout << "[NAS DEBUG] gridLineCount = " << gridLineCount << "\n";
+    // std::cout << "[NAS DEBUG] quadLineCount = " << quadLineCount << "\n";
+    // std::cout << "[NAS DEBUG] grid.size() = " << grid.size() << "\n";
+    // std::cout << "[NAS DEBUG] rawQuads.size() = " << rawQuads.size() << "\n";
 
-    // 座標付きで並べ替え用にベクトル化
-    struct NodeRef { double x, y, z; };
-    std::vector<NodeRef> nodes;
-    for (int nid : uniqueNodes) {
-        const auto& p = grid[nid];
-        nodes.push_back({p.x, p.y, p.z});
-    }
+    // ------------------------
+    // 2. RawQuad の NAS node ID を VTU index に変換
+    // ------------------------
+    int quadOkCount = 0;
+    int quadGridMissingCount = 0;
+    int quadVtuMissingCount = 0;
 
-    // x → z の順でソート（i: x方向, j: z方向）
-    const double eps = 1e-3;
+    for (const auto& rq : rawQuads) {
+        Quad q;
+        q.eid = rq.eid;
+        q.pid = rq.pid;
 
-    std::sort(nodes.begin(), nodes.end(), [&](const NodeRef &a, const NodeRef &b){
+        bool ok = true;
 
-        if (std::abs(a.x - b.x) > eps) 
-            return a.x < b.x; // 主キー: x (i方向)
-        else
-            return a.z < b.z;                               // 副キー: z (j方向)
+        for (int a = 0; a < 4; ++a) {
+            int nasId = rq.nasNode[a];
 
-    });
+            auto it = grid.find(nasId);
+            if (it == grid.end()) {
+                ++quadGridMissingCount;
+                ok = false;
+                break;
+            }
 
-    // 2D格子化
-    if (nodes.size() != nsurfl * nsurfz) {
-        std::cerr << "Warning: node count (" << nodes.size() 
-                  << ") != nsurfl*nsurfz (" << nsurfl * nsurfz << ")\n";
-    }
+            const Point& gp = it->second;
 
-    surfp.assign(nsurfl, std::vector<int>(nsurfz, -1));
-
-    int idx = 0;
-    for (int i = 0; i < nsurfl; ++i) {
-        for (int j = 0; j < nsurfz; ++j) {
-            if (idx >= (int)nodes.size()) break;
-
-            const auto& n = nodes[idx];  // ソート済みの座標
             int vtuIndex = -1;
 
-            // VTU上のインデックスを探索
-            for (int k = 0; k < (int)points.size(); ++k) {
+            for (int k = 0; k < static_cast<int>(points.size()); ++k) {
                 if (isSamePointRounded(points[k].x, points[k].y, points[k].z,
-                                    n.x, n.y, n.z)) {
+                                       gp.x, gp.y, gp.z)) {
                     vtuIndex = k;
                     break;
                 }
             }
 
-            if (vtuIndex == -1) {
-                // std::cerr << "Warning: couldn't find VTU point for (" 
-                //         << n.x << ", " << n.y << ", " << n.z << ") \n";
+            if (vtuIndex < 0) {
+                ++quadVtuMissingCount;
+
+                if (quadVtuMissingCount <= 10) {
+                    std::cout << "[NAS WARN] VTU point not found for NAS node "
+                              << nasId
+                              << " mapped=("
+                              << gp.x << ", "
+                              << gp.y << ", "
+                              << gp.z << ")\n";
+                }
+
+                ok = false;
+                break;
             }
 
-            surfp[i][j] = vtuIndex;
-            ++idx;
+            q.n[a] = vtuIndex;
+        }
+
+        if (ok) {
+            quads.push_back(q);
+            ++quadOkCount;
         }
     }
 
-    zmax = points[0].z;
-    for (const auto& p : points)
-        if (p.z > zmax) zmax = p.z;
+    // std::cout << "[NAS DEBUG] quadOkCount = " << quadOkCount << "\n";
+    // std::cout << "[NAS DEBUG] quadGridMissingCount = "
+    //           << quadGridMissingCount << "\n";
+    // std::cout << "[NAS DEBUG] quadVtuMissingCount = "
+    //           << quadVtuMissingCount << "\n";
+    // std::cout << "[NAS DEBUG] quads.size() = " << quads.size() << "\n";
+
+    if (quads.empty()) {
+        std::cerr << "[NAS ERROR] No valid CQUAD4 elements were converted. "
+                  << "Check coordinate mapping grid[id] = {gz,gx,gy} "
+                  << "and isSamePointRounded tolerance.\n";
+        return;
+    }
+
+    // ------------------------
+    // 3. 節点を一意に集める
+    // ------------------------
+    std::set<int> uniqueNodes;
+
+    for (const auto& q : quads) {
+        for (int a = 0; a < 4; ++a) {
+            uniqueNodes.insert(q.n[a]);
+        }
+    }
+
+    // std::cout << "[NAS DEBUG] uniqueNodes.size() = "
+    //           << uniqueNodes.size() << "\n";
+
+    if (uniqueNodes.empty()) {
+        std::cerr << "[NAS ERROR] uniqueNodes is empty.\n";
+        return;
+    }
+
+    // ------------------------
+    // 4. zレベルを作る
+    // ------------------------
+    std::vector<double> zValues;
+    zValues.reserve(uniqueNodes.size());
+
+    for (int pid : uniqueNodes) {
+        zValues.push_back(points[pid].z);
+    }
+
+    
+const double tolZCluster = 1.0e-3;  // zレベルを作るための許容値
+const double tolZAssign  = 1.0e-2;  // 既存節点をzレベルに割り当てる許容値
+
+    std::vector<double> zLevels = makeLevels(zValues, tolZCluster);
+
+    // std::cout << "[NAS DEBUG] zValues.size() = "
+    //           << zValues.size() << "\n";
+    // std::cout << "[NAS DEBUG] zLevels.size() = "
+    //           << zLevels.size() << "\n";
+
+    if (!zLevels.empty()) {
+        std::cout << "[NAS DEBUG] zLevels front/back = "
+                  << zLevels.front()
+                  << " / "
+                  << zLevels.back()
+                  << "\n";
+    }
+
+    if (static_cast<int>(zLevels.size()) != nsurfz_param) {
+        std::cerr << "[WARN] detected z levels = "
+                  << zLevels.size()
+                  << ", expected nsurfz = "
+                  << nsurfz_param
+                  << "\n";
+    }
+
+    nsurfz = static_cast<int>(zLevels.size());
+
+    if (nsurfz == 0) {
+        std::cerr << "[NAS ERROR] nsurfz became 0.\n";
+        return;
+    }
+
+    auto getZLevel = [&](int pid) {
+        return nearestLevel(zLevels, points[pid].z, tolZAssign);
+    };
+
+    // ------------------------
+    // 5. zレベルごとに i方向接続を作る
+    //
+    // CQUAD4の節点順に依存せず、
+    // 各quad内で同じzレベルに属する2点を接続する。
+    // ------------------------
+    std::vector<std::unordered_map<int, std::set<int>>> adjByZ(nsurfz);
+
+    int sameZPairCount = 0;
+    int badQuadZGroupCount = 0;
+    int invalidZNodeCount = 0;
+
+    for (const auto& q : quads) {
+        int ids[4] = {q.n[0], q.n[1], q.n[2], q.n[3]};
+
+        std::map<int, std::vector<int>> groups;
+
+        for (int a = 0; a < 4; ++a) {
+            int pid = ids[a];
+            int jz = getZLevel(pid);
+
+            if (jz < 0) {
+                ++invalidZNodeCount;
+                continue;
+            }
+
+            groups[jz].push_back(pid);
+        }
+
+        for (const auto& kv : groups) {
+            int jz = kv.first;
+            const auto& v = kv.second;
+
+            if (v.size() == 2) {
+                int a = v[0];
+                int b = v[1];
+
+                adjByZ[jz][a].insert(b);
+                adjByZ[jz][b].insert(a);
+
+                ++sameZPairCount;
+            }
+            else {
+                ++badQuadZGroupCount;
+
+                if (badQuadZGroupCount <= 20) {
+                    std::cout << "[NAS WARN] quad eid=" << q.eid
+                              << " pid=" << q.pid
+                              << " zLevel=" << jz
+                              << " has " << v.size()
+                              << " nodes\n";
+                }
+            }
+        }
+    }
+
+    // std::cout << "[NAS DEBUG] sameZPairCount = "
+    //           << sameZPairCount << "\n";
+    // std::cout << "[NAS DEBUG] badQuadZGroupCount = "
+    //           << badQuadZGroupCount << "\n";
+    // std::cout << "[NAS DEBUG] invalidZNodeCount = "
+    //           << invalidZNodeCount << "\n";
+
+    if (sameZPairCount == 0) {
+        std::cerr << "[NAS ERROR] No same-z pairs were found. "
+                  << "Cannot build i-direction polylines.\n";
+        return;
+    }
+
+
+    std::vector<std::vector<int>> nodesByZ(nsurfz);
+
+    int assignedZNodeCount = 0;
+    int unassignedZNodeCount = 0;
+
+    for (int pid : uniqueNodes) {
+        int jz = getZLevel(pid);
+
+        if (jz >= 0) {
+            nodesByZ[jz].push_back(pid);
+            ++assignedZNodeCount;
+        } else {
+            ++unassignedZNodeCount;
+
+            if (unassignedZNodeCount <= 20) {
+                std::cout << "[Z ASSIGN WARN] pid=" << pid
+                        << " z=" << points[pid].z
+                        << "\n";
+            }
+        }
+    }
+
+// std::cout << "[NAS DEBUG] assignedZNodeCount = "
+//           << assignedZNodeCount << "\n";
+
+// std::cout << "[NAS DEBUG] unassignedZNodeCount = "
+//           << unassignedZNodeCount << "\n";
 
 
 
-    std::cout << "Surface extracted: " << nodes.size() 
-              << " nodes → (" << nsurfl << " x " << nsurfz << ") grid.\n";
+    // ------------------------
+    // 6. 各zレベルでポリラインをたどる
+    // ------------------------
+    std::vector<std::vector<int>> rowsByZ(nsurfz);
 
-    // surfpの内容を出力して確認
+    for (int j = 0; j < nsurfz; ++j) {
+        std::cout << "[NAS DEBUG] adjByZ[" << j << "].size() = "
+                  << adjByZ[j].size() << "\n";
+
+        rowsByZ[j] = traceAllComponentsAsOneRow(adjByZ[j], nodesByZ[j], points);
+
+        std::cout << "z-level j=" << j
+                  << " nodes=" << rowsByZ[j].size()
+                  << "\n";
+    }
+
+    // ------------------------
+    // 7. zレベル間で向きをそろえる
+    // ------------------------
+    auto dist2 = [&](int p, int q) {
+        double dx = points[p].x - points[q].x;
+        double dy = points[p].y - points[q].y;
+        double dz = points[p].z - points[q].z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+
+    for (int j = 1; j < nsurfz; ++j) {
+        if (rowsByZ[j].empty() || rowsByZ[j - 1].empty()) continue;
+
+        int a0 = rowsByZ[j][0];
+        int a1 = rowsByZ[j].back();
+
+        int b0 = rowsByZ[j - 1][0];
+        int b1 = rowsByZ[j - 1].back();
+
+        double same = dist2(a0, b0) + dist2(a1, b1);
+        double flip = dist2(a0, b1) + dist2(a1, b0);
+
+        if (flip < same) {
+            std::reverse(rowsByZ[j].begin(), rowsByZ[j].end());
+        }
+    }
+
+    // ------------------------
+    // 8. surfp[i][j] を構築
+    // ------------------------
+    int detectedNsurfl = 0;
+
+    for (const auto& row : rowsByZ) {
+        detectedNsurfl =
+            std::max(detectedNsurfl, static_cast<int>(row.size()));
+    }
+
+    if (detectedNsurfl != nsurfl_param) {
+        std::cerr << "[WARN] detected nsurfl = "
+                  << detectedNsurfl
+                  << ", expected nsurfl = "
+                  << nsurfl_param
+                  << "\n";
+    }
+
+    nsurfl = detectedNsurfl;
+
+    if (nsurfl == 0) {
+        std::cerr << "[NAS ERROR] nsurfl became 0.\n";
+        return;
+    }
+
+    surfp.assign(nsurfl, std::vector<int>(nsurfz, -1));
+
+    for (int j = 0; j < nsurfz; ++j) {
+        for (int i = 0; i < static_cast<int>(rowsByZ[j].size()); ++i) {
+            surfp[i][j] = rowsByZ[j][i];
+        }
+    }
+
+    // ------------------------
+    // 9. surfp検査
+    // ------------------------
+    int missing = 0;
+    int badZOrder = 0;
+    int largeDz = 0;
+    int largeDi = 0;
+
+    const double dzLimit = 1.0;
+    const double diLimit = 5.0;
+
+    auto dist3 = [&](int p, int q) {
+        double dx = points[p].x - points[q].x;
+        double dy = points[p].y - points[q].y;
+        double dz = points[p].z - points[q].z;
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    for (int i = 0; i < nsurfl; ++i) {
+        for (int j = 0; j < nsurfz; ++j) {
+            if (surfp[i][j] < 0) {
+                ++missing;
+            }
+        }
+    }
+
+    // j方向 = z方向
+    for (int i = 0; i < nsurfl; ++i) {
+        for (int j = 0; j < nsurfz - 1; ++j) {
+            int p0 = surfp[i][j];
+            int p1 = surfp[i][j + 1];
+
+            if (p0 < 0 || p1 < 0) continue;
+
+            double z0 = points[p0].z;
+            double z1 = points[p1].z;
+            double dz = std::abs(z1 - z0);
+
+            if (z1 < z0) {
+                ++badZOrder;
+
+                std::cout << "[BAD Z ORDER] i=" << i
+                          << " j=" << j
+                          << " z0=" << z0
+                          << " z1=" << z1
+                          << "\n";
+            }
+
+            if (dz > dzLimit) {
+                ++largeDz;
+
+                std::cout << "[LARGE DZ] i=" << i
+                          << " j=" << j
+                          << " dz=" << dz
+                          << " z0=" << z0
+                          << " z1=" << z1
+                          << "\n";
+            }
+        }
+    }
+
+    // i方向 = 表面に沿う方向
+    for (int i = 0; i < nsurfl - 1; ++i) {
+        for (int j = 0; j < nsurfz; ++j) {
+            int p0 = surfp[i][j];
+            int p1 = surfp[i + 1][j];
+
+            if (p0 < 0 || p1 < 0) continue;
+
+            double d = dist3(p0, p1);
+
+            if (d > diLimit) {
+                ++largeDi;
+
+                std::cout << "[LARGE I STEP] i=" << i
+                          << " j=" << j
+                          << " dist=" << d
+                          << "\n";
+            }
+        }
+    }
+
+    std::cout << "[surfp check] missing=" << missing
+              << " badZOrder=" << badZOrder
+              << " largeDz=" << largeDz
+              << " largeDi=" << largeDi
+              << "\n";
+
+    // ------------------------
+    // 10. zmax更新
+    // ------------------------
+    zmax = -1.0e100;
+
+    for (int i = 0; i < nsurfl; ++i) {
+        for (int j = 0; j < nsurfz; ++j) {
+            int pid = surfp[i][j];
+            if (pid < 0) continue;
+
+            zmax = std::max(zmax, points[pid].z);
+        }
+    }
+
+    if (zmax < -1.0e90) {
+        std::cerr << "[WARN] zmax could not be computed from surfp.\n";
+    }
+
+    // ------------------------
+    // 11. CSV出力
+    // ------------------------
     std::ofstream ofs("../output/surfp_output.csv");
     if (!ofs) {
         std::cerr << "Failed to open surfp_output.csv for writing.\n";
@@ -507,31 +1233,27 @@ void Geometry::surfExtractFromNAS(const std::string& nasFile, int nsurfl_param, 
     }
 
     ofs << "# i j node_id x y z\n";
+
     for (int i = 0; i < nsurfl; ++i) {
         for (int j = 0; j < nsurfz; ++j) {
             int nid = surfp[i][j];
             if (nid < 0) continue;
+
             const auto& g = points[nid];
+
             ofs << i << ", " << j << ", "
-                << nid << ", " << g.x << ", " << g.y << ", " << g.z << "\n";
+                << nid << ", "
+                << g.x << ", "
+                << g.y << ", "
+                << g.z << "\n";
         }
     }
 
-
-    //int i = 1;  // 調べたい行
-
-/*    for (int i = 0; i < nsurfl; ++i) {
-        for (int j = 0; j < nsurfz; ++j) {
-            int pid = surfp[i][j];
-            if (pid >= 0)
-                std::cout << "i=" << std::setw(2) << i << " j=" << std::setw(2) << j
-                        << " pid=" << std::setw(4) << pid
-                        << " (x,y,z)=( " << std::setw(8) <<points[pid].x << ", " 
-                                        << std::setw(8) <<points[pid].y << ", " 
-                                        << std::setw(8) <<points[pid].z << " )\n";
-        }
-    }   */
+    std::cout << "Surface extracted by NAS connectivity: "
+              << "(" << nsurfl << " x " << nsurfz << ") grid.\n";
 }
+//     }   */
+
 
 // ------------------------
 // デバッグ用

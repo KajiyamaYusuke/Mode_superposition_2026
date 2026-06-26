@@ -170,6 +170,7 @@ void ForceCalculator::calcForce(double t, int n) {
     int nsurfz = geomL.nsurfz;
     int nxsup  = geomL.nxsup;
 
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fxL.size()); ++i) {
         std::fill(fxL[i].begin(), fxL[i].end(), 0.0);
         std::fill(fyL[i].begin(), fyL[i].end(), 0.0);
@@ -177,6 +178,7 @@ void ForceCalculator::calcForce(double t, int n) {
     }
 
     // 右側を右側サイズでクリア
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fxR.size()); ++i) {
         std::fill(fxR[i].begin(), fxR[i].end(), 0.0);
         std::fill(fyR[i].begin(), fyR[i].end(), 0.0);
@@ -195,6 +197,7 @@ void ForceCalculator::calcForce(double t, int n) {
         const int nj = std::min(static_cast<int>(fxL[0].size()),
                                 static_cast<int>(fxR[0].size()));
 
+        #pragma omp parallel for collapse(2) schedule(static)
         for (int i = 1; i < ni - 1; i++) {
             for (int j = 1; j < nj - 1; j++) {
                 const double f = sp.famp * std::sin(2.0 * M_PI * sp.forcef * t);
@@ -322,10 +325,13 @@ void ForceCalculator::calcForce(double t, int n) {
         }
 
     }
+    
+
 }
 
 void ForceCalculator::f2mode() {
 
+    #pragma omp parallel for schedule(static)
     for (int imode = 0; imode < modeDataL.nModes; imode++) {
         double force = 0.0;
         const auto& mode = modeDataL.modes[imode];
@@ -343,6 +349,7 @@ void ForceCalculator::f2mode() {
         fiL[imode] = force;
     }
 
+    #pragma omp parallel for schedule(static)
     for (int imode = 0; imode < modeDataR.nModes; imode++) {
         double force = 0.0;
         const auto& mode = modeDataR.modes[imode];
@@ -407,6 +414,7 @@ void ForceCalculator::calcArea() {
 
     std::fill(harea.begin(), harea.end(), 0.0);
     
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < geomL.nxsup; ++i) {
         double hi = 0.0;
         for (int j = 0; j < geomL.nsurfz - 1; ++j) {
@@ -441,19 +449,23 @@ void ForceCalculator::calcArea() {
             if (!std::isfinite(gap)) gap = 0.0;
             if (!std::isfinite(ztmp)) ztmp = 0.0;
 
-            hi += gap * ztmp; 
+            double contrib = gap * ztmp;
+
+            hi += contrib;
         }
         harea[i] = hi;
     }
 
 
-    for (auto& anglePlane : degreeL) {
-        for (auto& row : anglePlane) {
+    #pragma omp parallel for schedule(static)
+    for (int p = 0; p < static_cast<int>(degreeL.size()); ++p) {
+        for (auto& row : degreeL[p]) {
             std::fill(row.begin(), row.end(), 0.0);
         }
     }
-    for (auto& anglePlane : degreeR) {
-        for (auto& row : anglePlane) {
+    #pragma omp parallel for schedule(static)
+    for (int p = 0; p < static_cast<int>(degreeR.size()); ++p) {
+        for (auto& row : degreeR[p]) {
             std::fill(row.begin(), row.end(), 0.0);
         }
     }
@@ -560,22 +572,28 @@ void ForceCalculator::calcDis(int step, int contactIter) {
     double debugWorstGapC = 0.0;
     double debugWorstGapPrev = 0.0;
 
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
         std::fill(fdisXL[i].begin(), fdisXL[i].end(), 0.0);
     }
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fdisYL.size()); ++i) {
         std::fill(fdisYL[i].begin(), fdisYL[i].end(), 0.0);
     }
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fdisXR.size()); ++i) {
         std::fill(fdisXR[i].begin(), fdisXR[i].end(), 0.0);
     }
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fdisYR.size()); ++i) {
         std::fill(fdisYR[i].begin(), fdisYR[i].end(), 0.0);
     }
 
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(contactForceL_ij.size()); ++i) {
         std::fill(contactForceL_ij[i].begin(), contactForceL_ij[i].end(), 0.0);
     }
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(contactForceR_ij.size()); ++i) {
         std::fill(contactForceR_ij[i].begin(), contactForceR_ij[i].end(), 0.0);
     }
@@ -1258,6 +1276,7 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
     }
 }
 
+    #pragma omp parallel for schedule(static) reduction(max:max_force_diff)
     for (int i = 0; i < static_cast<int>(fdisXR.size()); ++i) {
         const int nj = std::min({
             static_cast<int>(fdisXR[i].size()),
@@ -1323,37 +1342,37 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
         const double avg_active_candidates_per_call =
             static_cast<double>(prof_total_active_candidates) * inv_calls;
 
-        std::cout << "\n";
-        std::cout << "============================================================\n";
-        std::cout << "[PROFILE_CALCDIS] calcDis profiling summary\n";
-        std::cout << "------------------------------------------------------------\n";
-        std::cout << "calls                         : " << prof_calls << "\n";
-        std::cout << std::fixed << std::setprecision(3);
-        std::cout << "total time [ms]                : " << prof_total_ms << "\n";
-        std::cout << "  clear  [ms]                  : " << prof_clear_ms  << "\n";
-        std::cout << "  build  [ms]                  : " << prof_build_ms  << "\n";
-        std::cout << "  active [ms]                  : " << prof_active_ms << "\n";
-        std::cout << "  pair   [ms]                  : " << prof_pair_ms   << "\n";
-        std::cout << "  accum  [ms]                  : " << prof_accum_ms  << "\n";
-        std::cout << "------------------------------------------------------------\n";
-        std::cout << "avg per call [ms]              : " << prof_total_ms * inv_calls << "\n";
-        std::cout << "  clear/call  [ms]             : " << prof_clear_ms  * inv_calls << "\n";
-        std::cout << "  build/call  [ms]             : " << prof_build_ms  * inv_calls << "\n";
-        std::cout << "  active/call [ms]             : " << prof_active_ms * inv_calls << "\n";
-        std::cout << "  pair/call   [ms]             : " << prof_pair_ms   * inv_calls << "\n";
-        std::cout << "  accum/call  [ms]             : " << prof_accum_ms  * inv_calls << "\n";
-        std::cout << "------------------------------------------------------------\n";
-        std::cout << "avg segL per call              : " << avg_segL_per_call << "\n";
-        std::cout << "avg segR per call              : " << avg_segR_per_call << "\n";
-        std::cout << "avg active candidates per call : " << avg_active_candidates_per_call << "\n";
-        std::cout << "max activeR size               : " << prof_max_activeR << "\n";
-        std::cout << "processPair total calls        : " << prof_total_process_pairs << "\n";
-        std::cout << "processPair avg per call       : " << avg_pairs_per_call << "\n";
-        std::cout << "contacts total                 : " << prof_total_contacts << "\n";
-        std::cout << "contacts avg per call          : " << avg_contacts_per_call << "\n";
-        std::cout << "contact ratio                  : " << contact_ratio << "\n";
-        std::cout << "============================================================\n";
-        std::cout << "\n";
+        // std::cout << "\n";
+        // std::cout << "============================================================\n";
+        // std::cout << "[PROFILE_CALCDIS] calcDis profiling summary\n";
+        // std::cout << "------------------------------------------------------------\n";
+        // std::cout << "calls                         : " << prof_calls << "\n";
+        // std::cout << std::fixed << std::setprecision(3);
+        // std::cout << "total time [ms]                : " << prof_total_ms << "\n";
+        // std::cout << "  clear  [ms]                  : " << prof_clear_ms  << "\n";
+        // std::cout << "  build  [ms]                  : " << prof_build_ms  << "\n";
+        // std::cout << "  active [ms]                  : " << prof_active_ms << "\n";
+        // std::cout << "  pair   [ms]                  : " << prof_pair_ms   << "\n";
+        // std::cout << "  accum  [ms]                  : " << prof_accum_ms  << "\n";
+        // std::cout << "------------------------------------------------------------\n";
+        // std::cout << "avg per call [ms]              : " << prof_total_ms * inv_calls << "\n";
+        // std::cout << "  clear/call  [ms]             : " << prof_clear_ms  * inv_calls << "\n";
+        // std::cout << "  build/call  [ms]             : " << prof_build_ms  * inv_calls << "\n";
+        // std::cout << "  active/call [ms]             : " << prof_active_ms * inv_calls << "\n";
+        // std::cout << "  pair/call   [ms]             : " << prof_pair_ms   * inv_calls << "\n";
+        // std::cout << "  accum/call  [ms]             : " << prof_accum_ms  * inv_calls << "\n";
+        // std::cout << "------------------------------------------------------------\n";
+        // std::cout << "avg segL per call              : " << avg_segL_per_call << "\n";
+        // std::cout << "avg segR per call              : " << avg_segR_per_call << "\n";
+        // std::cout << "avg active candidates per call : " << avg_active_candidates_per_call << "\n";
+        // std::cout << "max activeR size               : " << prof_max_activeR << "\n";
+        // std::cout << "processPair total calls        : " << prof_total_process_pairs << "\n";
+        // std::cout << "processPair avg per call       : " << avg_pairs_per_call << "\n";
+        // std::cout << "contacts total                 : " << prof_total_contacts << "\n";
+        // std::cout << "contacts avg per call          : " << avg_contacts_per_call << "\n";
+        // std::cout << "contact ratio                  : " << contact_ratio << "\n";
+        // std::cout << "============================================================\n";
+        // std::cout << "\n";
     }
 #endif
 }
@@ -1377,17 +1396,17 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
 void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
 
     static bool printed_constants = false;
-    if (t > 0.0 && !printed_constants) {
-        std::cout << "\n=== [DEBUG] calcFlowStep Constants at Step 1 ===" << std::scientific << std::setprecision(12) << std::endl;
-        std::cout << "ps (Lung Press): " << sp.ps << std::endl;
-        std::cout << "rho: " << rho << " | mu: " << mu << std::endl;
-        std::cout << "xsup: " << geomL.xsup << " | lg: " << lg << std::endl;
-        std::cout << "beta: " << beta << " | R2: " << R2 << std::endl;
-        std::cout << "Cu: " << Cu << " | Lu: " << Lu << std::endl;
-        std::cout << "La: " << La << " | Ca: " << Ca << std::endl;
-        std::cout << "=================================================\n" << std::endl;
-        printed_constants = true;
-    }
+    // if (t > 0.0 && !printed_constants) {
+    //     std::cout << "\n=== [DEBUG] calcFlowStep Constants at Step 1 ===" << std::scientific << std::setprecision(12) << std::endl;
+    //     std::cout << "ps (Lung Press): " << sp.ps << std::endl;
+    //     std::cout << "rho: " << rho << " | mu: " << mu << std::endl;
+    //     std::cout << "xsup: " << geomL.xsup << " | lg: " << lg << std::endl;
+    //     std::cout << "beta: " << beta << " | R2: " << R2 << std::endl;
+    //     std::cout << "Cu: " << Cu << " | Lu: " << Lu << std::endl;
+    //     std::cout << "La: " << La << " | Ca: " << Ca << std::endl;
+    //     std::cout << "=================================================\n" << std::endl;
+    //     printed_constants = true;
+    // }
     
     // --- 1. 声門下 (Subglottal) の更新 ---
 
@@ -1605,8 +1624,12 @@ void ForceCalculator::outputCorrespondenceOffsets(int step) const {
 
     
 void ForceCalculator::resetPreviousContactForce() {
-    for (auto& row : prevFdisXL) std::fill(row.begin(), row.end(), 0.0);
-    for (auto& row : prevFdisYL) std::fill(row.begin(), row.end(), 0.0);
-    for (auto& row : prevFdisXR) std::fill(row.begin(), row.end(), 0.0);
-    for (auto& row : prevFdisYR) std::fill(row.begin(), row.end(), 0.0);
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < static_cast<int>(prevFdisXL.size()); ++i) std::fill(prevFdisXL[i].begin(), prevFdisXL[i].end(), 0.0);
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < static_cast<int>(prevFdisYL.size()); ++i) std::fill(prevFdisYL[i].begin(), prevFdisYL[i].end(), 0.0);
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < static_cast<int>(prevFdisXR.size()); ++i) std::fill(prevFdisXR[i].begin(), prevFdisXR[i].end(), 0.0);
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < static_cast<int>(prevFdisYR.size()); ++i) std::fill(prevFdisYR[i].begin(), prevFdisYR[i].end(), 0.0);
 }
