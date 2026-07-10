@@ -142,6 +142,7 @@ void ForceCalculator::initialize() {
     degreeL.assign(2, std::vector<std::vector<double>>(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0)));
     degreeR.assign(2, std::vector<std::vector<double>>(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0)));
 
+    //[DEBUG]
     debugForceFile.open("../output/debug_force.txt", std::ios::trunc);
     if (debugForceFile) {
         debugForceFile << "=== Debug Force Log Initialized ===\n";
@@ -153,7 +154,24 @@ void ForceCalculator::initialize() {
             << "step,iter,contacts,attractive_contacts,nonfinite_contacts,"
             << "max_pen_m,max_abs_pen_dot,max_contact_pressure,max_force,"
             << "min_sep_dot_norm,worst_iL,worst_iR,worst_j,worst_nx,worst_ny,"
-            << "worst_FxL,worst_FyL,worst_gapC,worst_gapPrev\n";
+            << "worst_FxL,worst_FyL,worst_gapC,worst_gapPrev\n"
+            << "sumContactL,sumContactR,"
+            << "maxContactL,maxContactIL,maxContactJL,"
+            << "maxContactR,maxContactIR,maxContactJR,";            
+    }
+
+    flowDebugFile.open("../output/debug_flow_detail.csv", std::ios::trunc);
+    if (flowDebugFile) {
+        flowDebugFile
+            << "step,time,"
+            << "minA_mm2,minA_m2,"
+            << "previousUg,currentUg,dUg,"
+            << "currentPg,"
+            << "PuLast,PuGlot,Pd0,Pd9,"
+            << "nsep,"
+            << "maxAbsPsurf,idxMaxAbsPsurf,"
+            << "psurf0,psurfMinA,psurfLast,"
+            << "hasNonFinite\n";
     }
     
     std::cout << "[ForceCalculator] initialized (Asymmetric): "
@@ -220,6 +238,59 @@ void ForceCalculator::calcForce(double t, int n) {
 
         Ug[n] = currentUg;
 
+        //[DEBUG]
+        auto maxAbsWithIndex = [](const std::vector<double>& v) {
+            double maxAbs = 0.0;
+            int imax = -1;
+            bool bad = false;
+
+            for (int i = 0; i < static_cast<int>(v.size()); ++i) {
+                double x = v[i];
+                if (!std::isfinite(x)) {
+                    return std::tuple<double,int,bool>(
+                        std::numeric_limits<double>::infinity(), i, true
+                    );
+                }
+                if (std::abs(x) > maxAbs) {
+                    maxAbs = std::abs(x);
+                    imax = i;
+                }
+            }
+            return std::tuple<double,int,bool>(maxAbs, imax, bad);
+        };
+
+        if (flowDebugFile && (n % 10 == 0 || t > 0.12)) {
+            auto [maxPsurfAbs, idxMaxPsurf, badPsurf] = maxAbsWithIndex(psurf);
+
+            bool hasBad =
+                !std::isfinite(minA) ||
+                !std::isfinite(previousUg) ||
+                !std::isfinite(currentUg) ||
+                !std::isfinite(currentPg) ||
+                badPsurf;
+
+            const double dUg = currentUg - previousUg;
+
+            const int Nsecg = sp.N_sub;
+
+            flowDebugFile << std::scientific << std::setprecision(12)
+                        << n << "," << t << ","
+                        << minA << "," << minA * 1.0e-6 << ","
+                        << previousUg << "," << currentUg << "," << dUg << ","
+                        << currentPg << ","
+                        << (Nsecg >= 0 && Nsecg < static_cast<int>(Pu.size()) ? Pu[Nsecg] : 0.0) << ","
+                        << (Nsecg + 1 < static_cast<int>(Pu.size()) ? Pu[Nsecg + 1] : 0.0) << ","
+                        << (Pd.size() > 0 ? Pd[0] : 0.0) << ","
+                        << (Pd.size() > 9 ? Pd[9] : 0.0) << ","
+                        << nsep << ","
+                        << maxPsurfAbs << "," << idxMaxPsurf << ","
+                        << (psurf.size() > 0 ? psurf[0] : 0.0) << ","
+                        << (idxMaxPsurf >= 0 ? psurf[idxMaxPsurf] : 0.0) << ","
+                        << (psurf.size() > 0 ? psurf.back() : 0.0) << ","
+                    << hasBad
+                        << "\n";
+        }
+
         // psurf 計算
         std::fill(psurf.begin(), psurf.end(), 0.0);
         psurf[0] = currentPg;
@@ -246,6 +317,38 @@ void ForceCalculator::calcForce(double t, int n) {
                 psurf[i] = psurf[i-1] + bernoulli_term - viscous_term;
 
                 if (psurf[i] > psurf[i-1]) { break; } // 圧力回復で剥離
+
+                //[DEBUG]
+                if (n % 10 == 0 || t > 0.12) {
+                    if (!std::isfinite(dx) ||
+                        !std::isfinite(h) ||
+                        !std::isfinite(h_prev) ||
+                        !std::isfinite(h_curr) ||
+                        !std::isfinite(Ugm) ||
+                        !std::isfinite(bernoulli_term) ||
+                        !std::isfinite(viscous_term) ||
+                        !std::isfinite(psurf[i]) ||
+                        std::abs(psurf[i]) > 1.0e8) {
+
+                        if (flowDebugFile) {
+                            flowDebugFile << std::scientific << std::setprecision(12)
+                                        << "#BAD_PSURF,"
+                                        << "step=" << n
+                                        << ",time=" << t
+                                        << ",i=" << i
+                                        << ",dx=" << dx
+                                        << ",h=" << h
+                                        << ",h_prev=" << h_prev
+                                        << ",h_curr=" << h_curr
+                                        << ",Ugm=" << Ugm
+                                        << ",bernoulli=" << bernoulli_term
+                                        << ",viscous=" << viscous_term
+                                        << ",psurf_prev=" << psurf[i-1]
+                                        << ",psurf=" << psurf[i]
+                                        << "\n";
+                        }
+                    }
+                }
             }
         } else {
             for (int i = 1; i < nsep-1; ++i) psurf[i] = currentPg;
@@ -552,8 +655,10 @@ void ForceCalculator::calcDis(int step, int contactIter) {
     lineStartL.clear();
     lineEndL.clear();
 
+    const double time = step * sp.dt;
+
     const bool debugContact =
-        (step >= 7600 && step <= 8120) || (step < 0 && contactIter < 0);
+        (time >= 0.120 && time <= 0.135);
     int debugContactCount = 0;
     int debugAttractiveContactCount = 0;
     int debugNonfiniteContactCount = 0;
@@ -1223,6 +1328,41 @@ void ForceCalculator::calcDis(int step, int contactIter) {
         }
     }
 
+double sumContactL = 0.0;
+double sumContactR = 0.0;
+double maxContactL = 0.0;
+double maxContactR = 0.0;
+int maxContactIL = -1, maxContactJL = -1;
+int maxContactIR = -1, maxContactJR = -1;
+
+for (int i = 0; i < static_cast<int>(contactForceL_ij.size()); ++i) {
+    for (int j = 0; j < static_cast<int>(contactForceL_ij[i].size()); ++j) {
+        double v = contactForceL_ij[i][j];
+        if (std::isfinite(v)) {
+            sumContactL += v;
+            if (v > maxContactL) {
+                maxContactL = v;
+                maxContactIL = i;
+                maxContactJL = j;
+            }
+        }
+    }
+}
+
+for (int i = 0; i < static_cast<int>(contactForceR_ij.size()); ++i) {
+    for (int j = 0; j < static_cast<int>(contactForceR_ij[i].size()); ++j) {
+        double v = contactForceR_ij[i][j];
+        if (std::isfinite(v)) {
+            sumContactR += v;
+            if (v > maxContactR) {
+                maxContactR = v;
+                maxContactIR = i;
+                maxContactJR = j;
+            }
+        }
+    }
+}
+
     if (debugContact && contactDebugFile) {
         if (!std::isfinite(debugMinSepDotNorm)) {
             debugMinSepDotNorm = 0.0;
@@ -1244,7 +1384,15 @@ void ForceCalculator::calcDis(int step, int contactIter) {
                          << debugWorstFxL << ","
                          << debugWorstFyL << ","
                          << debugWorstGapC << ","
-                         << debugWorstGapPrev << "\n";
+                         << debugWorstGapPrev << ","
+                         << sumContactL << ","
+                         << sumContactR << ","
+                         << maxContactL << ","
+                         << maxContactIL << ","
+                         << maxContactJL << ","
+                         << maxContactR << ","
+                         << maxContactIR << ","
+                         << maxContactJR << "\n";
     }
 
 #ifdef PROFILE_CALCDIS

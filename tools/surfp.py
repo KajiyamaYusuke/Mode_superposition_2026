@@ -19,7 +19,7 @@ ax = fig.add_subplot(111, projection='3d')
 
 # i の値で色を変える
 sc = ax.scatter(df['x'], df['y'], df['z'],
-                c=df['i'], cmap='viridis', s=40)
+                c=df['j'], cmap='viridis', s=40)
 
 # カラーバーを追加
 cb = plt.colorbar(sc, ax=ax, label='i index')

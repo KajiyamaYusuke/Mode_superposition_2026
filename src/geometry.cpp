@@ -914,13 +914,13 @@ const double tolZAssign  = 1.0e-2;  // 既存節点をzレベルに割り当て�
     // std::cout << "[NAS DEBUG] zLevels.size() = "
     //           << zLevels.size() << "\n";
 
-    if (!zLevels.empty()) {
-        std::cout << "[NAS DEBUG] zLevels front/back = "
-                  << zLevels.front()
-                  << " / "
-                  << zLevels.back()
-                  << "\n";
-    }
+    // if (!zLevels.empty()) {
+    //     std::cout << "[NAS DEBUG] zLevels front/back = "
+    //               << zLevels.front()
+    //               << " / "
+    //               << zLevels.back()
+    //               << "\n";
+    // }
 
     if (static_cast<int>(zLevels.size()) != nsurfz_param) {
         std::cerr << "[WARN] detected z levels = "
@@ -1047,8 +1047,8 @@ const double tolZAssign  = 1.0e-2;  // 既存節点をzレベルに割り当て�
     std::vector<std::vector<int>> rowsByZ(nsurfz);
 
     for (int j = 0; j < nsurfz; ++j) {
-        std::cout << "[NAS DEBUG] adjByZ[" << j << "].size() = "
-                  << adjByZ[j].size() << "\n";
+        // std::cout << "[NAS DEBUG] adjByZ[" << j << "].size() = "
+        //           << adjByZ[j].size() << "\n";
 
         rowsByZ[j] = traceAllComponentsAsOneRow(adjByZ[j], nodesByZ[j], points);
 

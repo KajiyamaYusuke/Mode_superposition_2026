@@ -93,6 +93,7 @@ private:
     bool hasVocalTract;
     std::ofstream debugForceFile;
     std::ofstream contactDebugFile;
+    std::ofstream flowDebugFile;
 
     const Geometry& geomL;
     const Geometry& geomR;

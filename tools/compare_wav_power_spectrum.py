@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#python compare_wav_power_spectrum.py ../output/test_sound.wav ../output/subject2.wav   --label-a "simulation"   --label-b "subject2"   --start-a 0.05 --end-a 0.15   --start-b 12.0 --end-b 15.0   --max-freq 500   -o compare_test_sound_subject2_500Hz.png
 """Compare Welch-averaged power spectra from two WAV files."""
 
 import argparse

@@ -145,6 +145,22 @@ void Simulation::run() {
     std::ofstream fp("../output/pressure.dat");
     std::ofstream fpv("../output/pressure_vt.dat");
     std::ofstream fuv("../output/airflow_vt.dat");
+    //[DEBUG]
+    std::ofstream fstepdbg("../output/debug_step_summary.csv");
+    fstepdbg << "step,time,"
+            << "minArea,maxArea,idxMinArea,"
+            << "currentUg,currentPg,Pd0,Pd9,"
+            << "maxAbsPsurf,"
+            << "maxFiL,imaxFiL,maxFiR,imaxFiR,"
+            << "maxQL,maxQdL,maxQaL,maxQR,maxQdR,maxQaR,"
+            << "maxPredDispL,maxPredDispR,"
+            << "icont_used,contactFlag,max_force_diff,"
+            << "diverged\n";
+    
+    std::ofstream fmodedbg("../output/debug_mode_summary.csv");
+    fmodedbg << "step,time,icont,stage,"
+            << "maxFiL,imaxFiL,maxFiR,imaxFiR,"
+            << "contactFlag,max_force_diff\n";
 
     //std::ofstream fdbg("../output/debug_fluid.dat");
     //std::ofstream contactIterDbg("../output/contact_iteration_debug.csv");
@@ -228,6 +244,57 @@ void Simulation::run() {
         return maxAbs;
     };
 
+    auto minMaxIndex = [](const std::vector<double>& v) {
+        double vmin = std::numeric_limits<double>::infinity();
+        double vmax = -std::numeric_limits<double>::infinity();
+        int imin = -1;
+        int imax = -1;
+
+        for (int i = 0; i < static_cast<int>(v.size()); ++i) {
+            double x = v[i];
+            if (!std::isfinite(x)) {
+                return std::tuple<double,double,int,int>(
+                    -std::numeric_limits<double>::infinity(),
+                    std::numeric_limits<double>::infinity(),
+                    i, i
+                );
+            }
+            if (x < vmin) { vmin = x; imin = i; }
+            if (x > vmax) { vmax = x; imax = i; }
+        }
+        return std::tuple<double,double,int,int>(vmin, vmax, imin, imax);
+    };
+
+    auto maxAbsIndex = [](const std::vector<double>& v) {
+        double maxAbs = 0.0;
+        int imax = -1;
+
+        for (int i = 0; i < static_cast<int>(v.size()); ++i) {
+            double x = v[i];
+            if (!std::isfinite(x)) {
+                return std::pair<double,int>(
+                    std::numeric_limits<double>::infinity(), i
+                );
+            }
+            if (std::abs(x) > maxAbs) {
+                maxAbs = std::abs(x);
+                imax = i;
+            }
+        }
+        return std::pair<double,int>(maxAbs, imax);
+    };
+
+    auto maxAbsPsurf = [&]() {
+        double m = 0.0;
+        for (double p : fCalc.psurf) {
+            if (!std::isfinite(p)) {
+                return std::numeric_limits<double>::infinity();
+            }
+            m = std::max(m, std::abs(p));
+        }
+        return m;
+    };
+
     //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 1);
     //num++;
     std::cout << "[Simulation] Output step 0 (Initial State)." << std::endl;
@@ -278,20 +345,19 @@ void Simulation::run() {
             time_f2mode += elapsed_ms(t0, t1);}
             total_f2mode_calls++;
 
-            
-            // if (n % 10 == 0) {
-            //     std::cout << std::scientific << std::setprecision(12)
-            //         << "step=" << n
-            //         << " fiL0=" << fCalc.fiL[0]
-            //         << " qL0=" << stateL.q[0]
-            //         << " qdotL0=" << stateL.qdot[0]
-            //         << " powerL0=" << fCalc.fiL[0] * stateL.qdot[0]
-            //         << " fiR0=" << fCalc.fiR[0]
-            //         << " qR0=" << stateR.q[0]
-            //         << " qdotR0=" << stateR.qdot[0]
-            //         << " powerR0=" << fCalc.fiR[0] * stateR.qdot[0]
-            //         << std::endl;
-            // }
+            if (n % 10 == 0 || t > 0.12) {
+                auto [maxFiL, imaxFiL] = maxAbsIndex(fCalc.fiL);
+                auto [maxFiR, imaxFiR] = maxAbsIndex(fCalc.fiR);
+
+                fmodedbg << std::scientific << std::setprecision(12)
+                        << n << "," << t << "," << icont << ","
+                        << "after_f2mode,"
+                        << maxFiL << "," << imaxFiL << ","
+                        << maxFiR << "," << imaxFiR << ","
+                        << fCalc.contactFlag << ","
+                        << fCalc.max_force_diff
+                        << "\n";
+            }
 
             // Newmark parameters
             const double newmark_beta  = 0.275625;
@@ -378,6 +444,76 @@ void Simulation::run() {
                << stateL.predictedDisp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " " // L側変位
                << stateR.predictedDisp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n"; // R側変位
         }
+
+        {   //[DEBUG]
+            auto [minA, maxA, idxMinA, idxMaxA] = minMaxIndex(fCalc.harea);
+
+            auto [maxFiL, imaxFiL] = maxAbsIndex(fCalc.fiL);
+            auto [maxFiR, imaxFiR] = maxAbsIndex(fCalc.fiR);
+
+            double maxQL  = maxAbsVector(stateL.qf);
+            double maxQdL = maxAbsVector(stateL.qfdot);
+            double maxQaL = maxAbsVector(stateL.qfddot);
+
+            double maxQR  = maxAbsVector(stateR.qf);
+            double maxQdR = maxAbsVector(stateR.qfdot);
+            double maxQaR = maxAbsVector(stateR.qfddot);
+
+            double maxPredDispL = maxAbsNodeDisp(geomL, stateL);
+            double maxPredDispR = maxAbsNodeDisp(geomR, stateR);
+
+            bool diverged =
+                !std::isfinite(minA) ||
+                !std::isfinite(maxA) ||
+                !std::isfinite(fCalc.currentUg) ||
+                !std::isfinite(fCalc.currentPg) ||
+                !std::isfinite(maxAbsPsurf()) ||
+                !std::isfinite(maxFiL) ||
+                !std::isfinite(maxFiR) ||
+                !std::isfinite(maxQL) ||
+                !std::isfinite(maxQdL) ||
+                !std::isfinite(maxQaL) ||
+                !std::isfinite(maxQR) ||
+                !std::isfinite(maxQdR) ||
+                !std::isfinite(maxQaR) ||
+                !std::isfinite(maxPredDispL) ||
+                !std::isfinite(maxPredDispR);
+
+            if (n % 10 == 0 || t > 0.12 || diverged) {
+                fstepdbg << std::scientific << std::setprecision(12)
+                        << n << "," << t << ","
+                        << minA << "," << maxA << "," << idxMinA << ","
+                        << fCalc.currentUg << "," << fCalc.currentPg << ","
+                        << (fCalc.Pd.size() > 0 ? fCalc.Pd[0] : 0.0) << ","
+                        << (fCalc.Pd.size() > 9 ? fCalc.Pd[9] : 0.0) << ","
+                        << maxAbsPsurf() << ","
+                        << maxFiL << "," << imaxFiL << ","
+                        << maxFiR << "," << imaxFiR << ","
+                        << maxQL << "," << maxQdL << "," << maxQaL << ","
+                        << maxQR << "," << maxQdR << "," << maxQaR << ","
+                        << maxPredDispL << "," << maxPredDispR << ","
+                        << icont_used_this_step << ","
+                        << fCalc.contactFlag << ","
+                        << fCalc.max_force_diff << ","
+                        << diverged
+                        << "\n";
+            }
+
+            if (diverged) {
+                std::cerr << "[DIVERGED] step=" << n
+                        << " t=" << t
+                        << " minA=" << minA
+                        << " idxMinA=" << idxMinA
+                        << " Ug=" << fCalc.currentUg
+                        << " Pg=" << fCalc.currentPg
+                        << " maxFiL=" << maxFiL
+                        << " maxFiR=" << maxFiR
+                        << " maxQL=" << maxQL
+                        << " maxQR=" << maxQR
+                        << std::endl;
+                break;
+            }
+        }
     
         // 状態の確定
         stateL.uf2u();
@@ -391,7 +527,7 @@ void Simulation::run() {
         if (n % 20 == 0) {
             //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             //writeLineVTK(fCalc.lineStartL, fCalc.lineEndL, num);
-            std::cout << n << "\n";
+            //std::cout << n << "\n";
             //fCalc.outputForceVectors(n);
             // writePointVTK(
             //     stateL.disp[nearestIdxL].ux,

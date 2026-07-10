@@ -14,6 +14,8 @@ input/
 *.log
 *.dat
 *.csv
+*.png
+*.txt
 
 # VSCode 設定
 .vscode/
