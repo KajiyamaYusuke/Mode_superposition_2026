@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         default=Path("result_wav_power_spectrum2.png"),
-        help="Output PNG path. Default: result_wav_power_spectrum.png",
+        help="Output PNG path. Default: result_wav_power_spectrum2.png",
     )
     parser.add_argument(
         "--csv",
@@ -75,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--db-floor",
         type=float,
-        default=-140.0,
+        default=-80.0,
         help="Lower dB limit for plotting. Default: -140",
     )
     parser.add_argument(
