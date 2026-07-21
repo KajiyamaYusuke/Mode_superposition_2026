@@ -38,7 +38,7 @@ void Simulation::initialize() {
     params.loadFromFile("../input/param.txt", err );
     params.print();
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b4c2.vtu");
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
 
@@ -51,13 +51,13 @@ void Simulation::initialize() {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b4c2.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b4c2.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b4c3.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b8c2.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
@@ -70,8 +70,8 @@ void Simulation::initialize() {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b4c3.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b4c3.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b8c2.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c2.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -373,7 +373,7 @@ void Simulation::run() {
                 double omega = 2.0 * M_PI * mdataL.frequencies[i];
 
                 double qf, qfdot, qfddot;
-                integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zeta,
+                integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zetaL,
                                        newmark_beta, newmark_gamma, qf, qfdot, qfddot);
 
                 stateL.qf[i]     = qf;
@@ -392,7 +392,7 @@ void Simulation::run() {
                 double omega = 2.0 * M_PI * mdataR.frequencies[i];
 
                 double qf, qfdot, qfddot;
-                integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zeta,
+                integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zetaR,
                                        newmark_beta, newmark_gamma, qf, qfdot, qfddot);
 
                 stateR.qf[i]     = qf;
@@ -445,75 +445,68 @@ void Simulation::run() {
                << stateR.predictedDisp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n"; // R側変位
         }
 
-        {   //[DEBUG]
-            auto [minA, maxA, idxMinA, idxMaxA] = minMaxIndex(fCalc.harea);
-
-            auto [maxFiL, imaxFiL] = maxAbsIndex(fCalc.fiL);
-            auto [maxFiR, imaxFiR] = maxAbsIndex(fCalc.fiR);
-
-            double maxQL  = maxAbsVector(stateL.qf);
-            double maxQdL = maxAbsVector(stateL.qfdot);
-            double maxQaL = maxAbsVector(stateL.qfddot);
-
-            double maxQR  = maxAbsVector(stateR.qf);
-            double maxQdR = maxAbsVector(stateR.qfdot);
-            double maxQaR = maxAbsVector(stateR.qfddot);
-
-            double maxPredDispL = maxAbsNodeDisp(geomL, stateL);
-            double maxPredDispR = maxAbsNodeDisp(geomR, stateR);
-
-            bool diverged =
-                !std::isfinite(minA) ||
-                !std::isfinite(maxA) ||
-                !std::isfinite(fCalc.currentUg) ||
-                !std::isfinite(fCalc.currentPg) ||
-                !std::isfinite(maxAbsPsurf()) ||
-                !std::isfinite(maxFiL) ||
-                !std::isfinite(maxFiR) ||
-                !std::isfinite(maxQL) ||
-                !std::isfinite(maxQdL) ||
-                !std::isfinite(maxQaL) ||
-                !std::isfinite(maxQR) ||
-                !std::isfinite(maxQdR) ||
-                !std::isfinite(maxQaR) ||
-                !std::isfinite(maxPredDispL) ||
-                !std::isfinite(maxPredDispR);
-
-            if (n % 10 == 0 || t > 0.12 || diverged) {
-                fstepdbg << std::scientific << std::setprecision(12)
-                        << n << "," << t << ","
-                        << minA << "," << maxA << "," << idxMinA << ","
-                        << fCalc.currentUg << "," << fCalc.currentPg << ","
-                        << (fCalc.Pd.size() > 0 ? fCalc.Pd[0] : 0.0) << ","
-                        << (fCalc.Pd.size() > 9 ? fCalc.Pd[9] : 0.0) << ","
-                        << maxAbsPsurf() << ","
-                        << maxFiL << "," << imaxFiL << ","
-                        << maxFiR << "," << imaxFiR << ","
-                        << maxQL << "," << maxQdL << "," << maxQaL << ","
-                        << maxQR << "," << maxQdR << "," << maxQaR << ","
-                        << maxPredDispL << "," << maxPredDispR << ","
-                        << icont_used_this_step << ","
-                        << fCalc.contactFlag << ","
-                        << fCalc.max_force_diff << ","
-                        << diverged
-                        << "\n";
-            }
-
-            if (diverged) {
-                std::cerr << "[DIVERGED] step=" << n
-                        << " t=" << t
-                        << " minA=" << minA
-                        << " idxMinA=" << idxMinA
-                        << " Ug=" << fCalc.currentUg
-                        << " Pg=" << fCalc.currentPg
-                        << " maxFiL=" << maxFiL
-                        << " maxFiR=" << maxFiR
-                        << " maxQL=" << maxQL
-                        << " maxQR=" << maxQR
-                        << std::endl;
-                break;
-            }
-        }
+        // {   //[DEBUG]
+        //     auto [minA, maxA, idxMinA, idxMaxA] = minMaxIndex(fCalc.harea);
+        //     auto [maxFiL, imaxFiL] = maxAbsIndex(fCalc.fiL);
+        //     auto [maxFiR, imaxFiR] = maxAbsIndex(fCalc.fiR);
+        //     double maxQL  = maxAbsVector(stateL.qf);
+        //     double maxQdL = maxAbsVector(stateL.qfdot);
+        //     double maxQaL = maxAbsVector(stateL.qfddot);
+        //     double maxQR  = maxAbsVector(stateR.qf);
+        //     double maxQdR = maxAbsVector(stateR.qfdot);
+        //     double maxQaR = maxAbsVector(stateR.qfddot);
+        //     double maxPredDispL = maxAbsNodeDisp(geomL, stateL);
+        //     double maxPredDispR = maxAbsNodeDisp(geomR, stateR);
+        //     bool diverged =
+        //         !std::isfinite(minA) ||
+        //         !std::isfinite(maxA) ||
+        //         !std::isfinite(fCalc.currentUg) ||
+        //         !std::isfinite(fCalc.currentPg) ||
+        //         !std::isfinite(maxAbsPsurf()) ||
+        //         !std::isfinite(maxFiL) ||
+        //         !std::isfinite(maxFiR) ||
+        //         !std::isfinite(maxQL) ||
+        //         !std::isfinite(maxQdL) ||
+        //         !std::isfinite(maxQaL) ||
+        //         !std::isfinite(maxQR) ||
+        //         !std::isfinite(maxQdR) ||
+        //         !std::isfinite(maxQaR) ||
+        //         !std::isfinite(maxPredDispL) ||
+        //         !std::isfinite(maxPredDispR);
+        //     if (n % 10 == 0 || t > 0.12 || diverged) {
+        //         fstepdbg << std::scientific << std::setprecision(12)
+        //                 << n << "," << t << ","
+        //                 << minA << "," << maxA << "," << idxMinA << ","
+        //                 << fCalc.currentUg << "," << fCalc.currentPg << ","
+        //                 << (fCalc.Pd.size() > 0 ? fCalc.Pd[0] : 0.0) << ","
+        //                 << (fCalc.Pd.size() > 9 ? fCalc.Pd[9] : 0.0) << ","
+        //                 << maxAbsPsurf() << ","
+        //                 << maxFiL << "," << imaxFiL << ","
+        //                 << maxFiR << "," << imaxFiR << ","
+        //                 << maxQL << "," << maxQdL << "," << maxQaL << ","
+        //                 << maxQR << "," << maxQdR << "," << maxQaR << ","
+        //                 << maxPredDispL << "," << maxPredDispR << ","
+        //                 << icont_used_this_step << ","
+        //                 << fCalc.contactFlag << ","
+        //                 << fCalc.max_force_diff << ","
+        //                 << diverged
+        //                 << "\n";
+        //     }
+        //     if (diverged) {
+        //         std::cerr << "[DIVERGED] step=" << n
+        //                 << " t=" << t
+        //                 << " minA=" << minA
+        //                 << " idxMinA=" << idxMinA
+        //                 << " Ug=" << fCalc.currentUg
+        //                 << " Pg=" << fCalc.currentPg
+        //                 << " maxFiL=" << maxFiL
+        //                 << " maxFiR=" << maxFiR
+        //                 << " maxQL=" << maxQL
+        //                 << " maxQR=" << maxQR
+        //                 << std::endl;
+        //         break;
+        //     }
+        // }
     
         // 状態の確定
         stateL.uf2u();
@@ -525,7 +518,7 @@ void Simulation::run() {
 
         // 3Dモデル出力
         if (n % 20 == 0) {
-            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
+            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             //writeLineVTK(fCalc.lineStartL, fCalc.lineEndL, num);
             //std::cout << n << "\n";
             //fCalc.outputForceVectors(n);

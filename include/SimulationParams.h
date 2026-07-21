@@ -27,7 +27,8 @@ struct SimulationParams {
     int    nstep   = 10000;    // 総ステップ数
     int    nwrite  = 100;      // 出力間隔（ステップ）
     double dt      = 1e-5;     // 時間刻み [s]
-    double zeta    = 0.0;      // 減衰比
+    double zetaL    = 0.0;
+    double zetaR    = 0.0;      // 減衰比
 
 
     // contact stiffness (例)。意味はプロジェクトに合わせて調整してください

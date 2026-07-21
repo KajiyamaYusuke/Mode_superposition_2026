@@ -38,7 +38,8 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         nstep  = std::stoi(nextLine());
         nwrite = std::stoi(nextLine());
         dt     = std::stod(nextLine());
-        zeta   = std::stod(nextLine());
+        zetaL   = std::stod(nextLine());
+        zetaR   = std::stod(nextLine());
 
         std::istringstream iss(nextLine());
         iss >> kc1 >> kc2 >> kc3;
@@ -85,7 +86,8 @@ void SimulationParams::print(std::ostream& os) const {
     os << "  nstep   = " << nstep << "\n";
     os << "  nwrite  = " << nwrite << "\n";
     os << "  dt      = " << dt << " [s]\n";
-    os << "  zeta    = " << zeta << "\n";
+    os << "  zetaL    = " << zetaL << "\n";
+    os << "  zetaR    = " << zetaR << "\n";
     os << "  kc1     = " << kc1 << "\n";
     os << "  kc2     = " << kc2 << "\n";
     os << "  mass    = " << mass << "\n";

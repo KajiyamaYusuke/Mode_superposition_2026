@@ -258,7 +258,7 @@ def main() -> None:
     ax.set_xlabel("Frequency [Hz]", fontsize=20)
     ax.set_ylabel("Power [dB]" if args.absolute_db else "PSD [dB ]", fontsize=20)
     ax.set_xlim(0, args.max_freq)
-    ax.set_ylim(-100, 5)
+    ax.set_ylim(-60, 5)
     ax.tick_params(direction="in", labelsize=16, top=True, right=True)
     ax.grid(which="both", linestyle="--", alpha=0.5)
     ax.legend(frameon=False, fontsize=20)
