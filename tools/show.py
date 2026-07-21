@@ -15,9 +15,9 @@ values = harea[:, 1:]
 row_min = np.min(values, axis=1)  # 各行の最小値を1次元配列で返す
 
 x = labels * 1e-5
-mask = x >= 0.1
-x = x[mask]
-row_min = row_min[mask]
+# mask = x >= 0.1
+# x = x[mask]
+# row_min = row_min[mask]
 
 plt.figure(figsize=(12,4), dpi=100)
 plt.plot(x, row_min, linestyle='-', color='#0072B2')  # ← マーカーなし線だけ

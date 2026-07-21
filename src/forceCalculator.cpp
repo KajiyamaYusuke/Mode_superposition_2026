@@ -29,7 +29,11 @@ ForceCalculator::ForceCalculator(const Geometry& geomL_, const Geometry& geomR_,
                                  State& stL_, State& stR_, const SimulationParams& sp_)
     : geomL(geomL_), geomR(geomR_), 
       modeDataL(mdL_), modeDataR(mdR_), 
-      stateL(stL_), stateR(stR_), sp(sp_) {}
+      stateL(stL_), stateR(stR_), sp(sp_),
+      fxL(surfaceLoad.fxL), fyL(surfaceLoad.fyL), fzL(surfaceLoad.fzL),
+      degreeL(sections.degreeL),
+      fxR(surfaceLoad.fxR), fyR(surfaceLoad.fyR), fzR(surfaceLoad.fzR),
+      degreeR(sections.degreeR), harea(sections.area) {}
 
 
 
@@ -44,15 +48,10 @@ void ForceCalculator::initialize() {
     int nModes_R = modeDataR.nModes;
 
     // --- 左声帯 (L) の変数初期化 ---
-    fxL.assign(nsurfl_L, std::vector<double>(nsurfz_L, 0.0));
-    fyL.assign(nsurfl_L, std::vector<double>(nsurfz_L, 0.0));
-    fzL.assign(nsurfl_L, std::vector<double>(nsurfz_L, 0.0));
+    surfaceLoad.resize(geomL, geomR);
     fiL.assign(nModes_L, 0.0);
 
     // --- 右声帯 (R) の変数初期化 ---
-    fxR.assign(nsurfl_R, std::vector<double>(nsurfz_R, 0.0));
-    fyR.assign(nsurfl_R, std::vector<double>(nsurfz_R, 0.0));
-    fzR.assign(nsurfl_R, std::vector<double>(nsurfz_R, 0.0));
     fiR.assign(nModes_R, 0.0);
 
     // --- 内部バッファ (流路断面数は左右で共通と仮定) ---
@@ -71,7 +70,9 @@ void ForceCalculator::initialize() {
     prevFdisYR.assign(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
     // --- 共有変数の初期化 ---
-    psurf.assign(nxsup, 0.0);
+    constexpr int flowSectionCount = 50;
+    sections.resize(geomL, geomR, flowSectionCount);
+    psurf.assign(flowSectionCount, 0.0);
     Ug.assign(stateL.nSteps, 0.0);       // ステップ数はL/R共通
     minHarea.assign(stateL.nSteps, 0.0);
 
@@ -83,11 +84,9 @@ void ForceCalculator::initialize() {
     Ud.assign(Nsecp, 0.0);
     Pd.assign(Nsecp , 0.0);
 
-    harea.clear();
-    degreeL.clear();
-    degreeR.clear();
     
     currentUg = 0.0;    
+    flowModel.initialize(sp, geomL, stateL.nSteps);
 
     rho = sp.rho ;
     mu  = sp.mu ;
@@ -138,9 +137,6 @@ void ForceCalculator::initialize() {
     contactForceL_ij.resize(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0));
     contactForceR_ij.resize(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
-    harea.assign(nxsup, 0.0);
-    degreeL.assign(2, std::vector<std::vector<double>>(geomL.nxsup, std::vector<double>(geomL.nsurfz, 0.0)));
-    degreeR.assign(2, std::vector<std::vector<double>>(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0)));
 
     //[DEBUG]
     debugForceFile.open("../output/debug_force.txt", std::ios::trunc);
@@ -158,6 +154,34 @@ void ForceCalculator::initialize() {
             << "sumContactL,sumContactR,"
             << "maxContactL,maxContactIL,maxContactJL,"
             << "maxContactR,maxContactIR,maxContactJR,";            
+    }
+
+    contactMonitorFile.open("../output/contact_monitor.csv", std::ios::trunc);
+    if (contactMonitorFile) {
+        contactMonitorFile
+            << "step,time,contact_iter,monitor_i,monitor_j,"
+            << "gap_y_mm,candidate_pairs,penetrating_pairs,"
+            << "contact_force_L_N,contact_force_R_N,"
+            << "fdisXL_N,fdisYL_N,fdisXR_N,fdisYR_N,"
+            << "contact_flag,max_force_diff\n";
+    }
+
+    contactIterationFile.open("../output/contact_iteration_debug.csv", std::ios::trunc);
+    if (contactIterationFile) {
+        contactIterationFile
+            << "step,time,contact_iter,contact_pairs,"
+            << "max_pen_m,max_pen_iL,max_pen_iR,max_pen_j,"
+            << "x_contact_mm,gap_a_mm,gap_b_mm,gap_c_mm,"
+            << "closing_speed_mps,contact_pressure_pa,contact_force_N,"
+            << "nx,ny,normal_separation_alignment,"
+            << "contact_flag,max_force_diff\n";
+    }
+
+    contactSearchFile.open("../output/contact_search_debug.csv", std::ios::trunc);
+    if (contactSearchFile) {
+        contactSearchFile
+            << "step,time,contact_iter,candidate_pairs,penetrating_pairs,"
+            << "cached_candidates,two_pointer_candidates,fallback_candidates\n";
     }
 
     flowDebugFile.open("../output/debug_flow_detail.csv", std::ios::trunc);
@@ -182,11 +206,19 @@ void ForceCalculator::initialize() {
               << std::endl;
 }
 
-void ForceCalculator::calcForce(double t, int n) {
+void ForceCalculator::setContactMonitor(int surfaceI, int surfaceJ) {
+    contactMonitorI = surfaceI;
+    contactMonitorJ = surfaceJ;
+    std::cout << "[Contact] monitor surface point set to (i,j)= ("
+              << contactMonitorI << ", " << contactMonitorJ << ")\n";
+}
+
+void ForceCalculator::applyFluidLoads(double t, int n) {
     // 左右で共通の分割数を使用
     int nsurfl = geomL.nsurfl;
     int nsurfz = geomL.nsurfz;
-    int nxsup  = geomL.nxsup;
+    const int nSurfaceSections = geomL.nxsup;
+    const int nFlowSections = static_cast<int>(harea.size());
 
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fxL.size()); ++i) {
@@ -231,7 +263,10 @@ void ForceCalculator::calcForce(double t, int n) {
         previousUg = (n > 0 && n-1 < (int)Ug.size()) ? Ug[n-1] : 0.0;
 
         // 安全な面積を使って流体計算を進める
-        calcFlowStep(t, sp.dt, minA * 1e-6);
+        flowModel.advance(t, sp.dt, minA * 1e-6, previousUg);
+        currentUg = flowModel.flowRate();
+        currentPg = flowModel.glottalPressure();
+        Pd = flowModel.downstreamPressure();
         
         // 剥離点の特定
         int nsep = findNsep(minA);
@@ -302,9 +337,15 @@ void ForceCalculator::calcForce(double t, int n) {
         }
 
         if (minA > 1e-6) {
-            for (int i = 1; i < nxsup; i++) {
-                // dxの計算は左声帯の座標を使用
-                double dx = std::abs(geomL.points[geomL.surfp[i][int(nsurfz/2)]].x - geomL.points[geomL.surfp[i-1][int(nsurfz/2)]].x);
+            for (int i = 1; i < nFlowSections; i++) {
+                if (!sections.valid[i - 1] || !sections.valid[i]) {
+                    // A geometric cut failure is not a physical closure.  Do
+                    // not turn it into an artificial pressure singularity.
+                    psurf[i] = psurf[i - 1];
+                    continue;
+                }
+                // Pressure stations use their deformed common-plane positions.
+                double dx = std::abs(sections.x[i] - sections.x[i-1]);
                 double h  = (harea[i] + harea[i-1]) / (2.0 * lg);
                 double h_prev = std::max(harea[i-1], 1e-3);
                 double h_curr = std::max(harea[i], 1e-3);
@@ -352,10 +393,20 @@ void ForceCalculator::calcForce(double t, int n) {
             }
         } else {
             for (int i = 1; i < nsep-1; ++i) psurf[i] = currentPg;
-            for (int i = nsep-1; i < nxsup; ++i) psurf[i] = Pd[0];
+            for (int i = nsep-1; i < nFlowSections; ++i) psurf[i] = Pd[0];
         }
 
-        for (int i = 1; i < nsep-1; i++) {
+        // Surface rows retain their own material coordinate.  Pressure is
+        // interpolated from the independent 50-section flow grid.
+        const int sepIndex = std::clamp(nsep - 1, 0, nFlowSections - 1);
+        const double sigmaSep = sections.sigma[sepIndex];
+        for (int i = 1; i < nSurfaceSections - 1; i++) {
+            const double sigma = static_cast<double>(i) / (nSurfaceSections - 1);
+            if (sigma >= sigmaSep) continue;
+            const double q = sigma * (nFlowSections - 1);
+            const int k0 = std::min(static_cast<int>(q), nFlowSections - 2);
+            const double w = q - k0;
+            const double pressure = (1.0 - w) * psurf[k0] + w * psurf[k0 + 1];
             for (int j = 1; j < nsurfz-1; j++) {
                 
                 int pid_ip1_L = geomL.surfp[i+1][j];
@@ -369,10 +420,10 @@ void ForceCalculator::calcForce(double t, int n) {
                     double dsL = std::sqrt(dxL*dxL + dyL*dyL);
                     double dzL = 0.5 * (stateL.disp[pid_jp1_L].uz - stateL.disp[pid_jm1_L].uz);
 
-                    fxL[i][j] = psurf[i] * dsL * dzL * 1.0e-6 * std::cos(degreeL[1][i][j]) * std::sin(degreeL[0][i][j]);
+                    fxL[i][j] = pressure * dsL * dzL * 1.0e-6 * std::cos(degreeL[1][i][j]) * std::sin(degreeL[0][i][j]);
 
-                    fyL[i][j] = -psurf[i] * dsL * dzL * 1.0e-6 * std::cos(degreeL[1][i][j]) * std::cos(degreeL[0][i][j]);
-                    fzL[i][j] = psurf[i] * dsL * dzL * 1.0e-6 * std::sin(degreeL[1][i][j]);
+                    fyL[i][j] = -pressure * dsL * dzL * 1.0e-6 * std::cos(degreeL[1][i][j]) * std::cos(degreeL[0][i][j]);
+                    fzL[i][j] = pressure * dsL * dzL * 1.0e-6 * std::sin(degreeL[1][i][j]);
 
                     // if (i == 38 && j == 10) { // 情報過多を防ぐため、jは中央の代表点のみを出力
                     //     std::ofstream debugFile("../output/debug_force.txt", std::ios::app);
@@ -400,10 +451,10 @@ void ForceCalculator::calcForce(double t, int n) {
                     double dsR = std::sqrt(dxR*dxR + dyR*dyR);
                     double dzR = 0.5 * (stateR.disp[pid_jp1_R].uz - stateR.disp[pid_jm1_R].uz);
 
-                    fxR[i][j] = -psurf[i] * dsR * dzR * 1.0e-6 * std::cos(degreeR[1][i][j]) * std::sin(degreeR[0][i][j]);
+                    fxR[i][j] = -pressure * dsR * dzR * 1.0e-6 * std::cos(degreeR[1][i][j]) * std::sin(degreeR[0][i][j]);
 
-                    fyR[i][j] = psurf[i] * dsR * dzR * 1.0e-6 * std::cos(degreeR[1][i][j]) * std::cos(degreeR[0][i][j]);
-                    fzR[i][j] = -psurf[i] * dsR * dzR * 1.0e-6 * std::sin(degreeR[1][i][j]);
+                    fyR[i][j] = pressure * dsR * dzR * 1.0e-6 * std::cos(degreeR[1][i][j]) * std::cos(degreeR[0][i][j]);
+                    fzR[i][j] = -pressure * dsR * dzR * 1.0e-6 * std::sin(degreeR[1][i][j]);
 
                     // if (i == 38 && j == 10) { 
                     //     std::ofstream debugFile("../output/debug_force.txt", std::ios::app);
@@ -432,43 +483,9 @@ void ForceCalculator::calcForce(double t, int n) {
 
 }
 
-void ForceCalculator::f2mode() {
-
-    #pragma omp parallel for schedule(static)
-    for (int imode = 0; imode < modeDataL.nModes; imode++) {
-        double force = 0.0;
-        const auto& mode = modeDataL.modes[imode];
-        for (int i = 0; i < geomL.nsurfl; i++) {
-            for (int j = 0; j < geomL.nsurfz; j++) {
-                int pid = geomL.surfp[i][j];
-                if (pid < 0) continue; // 節点が存在しない場合スキップ
-
-                const auto& modeAtPoint = mode[pid];
-                force += fxL[i][j] * modeAtPoint.ux
-                       + fyL[i][j] * modeAtPoint.uy
-                       + fzL[i][j] * modeAtPoint.uz;
-            }
-        }
-        fiL[imode] = force;
-    }
-
-    #pragma omp parallel for schedule(static)
-    for (int imode = 0; imode < modeDataR.nModes; imode++) {
-        double force = 0.0;
-        const auto& mode = modeDataR.modes[imode];
-        for (int i = 0; i < geomR.nsurfl; i++) {
-            for (int j = 0; j < geomR.nsurfz; j++) {
-                int pid = geomR.surfp[i][j];
-                if (pid < 0) continue; // 節点が存在しない場合スキップ
-
-                const auto& modeAtPoint = mode[pid];
-                force += fxR[i][j] * modeAtPoint.ux
-                       + fyR[i][j] * modeAtPoint.uy
-                       + fzR[i][j] * modeAtPoint.uz;
-            }
-        }
-        fiR[imode] = force;
-    }
+void ForceCalculator::projectLoadsToModes() {
+    modalProjector.project(geomL, modeDataL, geomR, modeDataR,
+                           surfaceLoad, fiL, fiR);
 }
 // void ForceCalculator::contactForce() {
 
@@ -511,106 +528,11 @@ void ForceCalculator::f2mode() {
 
 // }
 
-void ForceCalculator::calcArea() {
-    // 左右どちらかのメッシュサイズを基準とする（今回は左を基準）
-    if (geomL.nxsup < 2 || geomL.nsurfz < 2) return;
-
-    std::fill(harea.begin(), harea.end(), 0.0);
-    
-    #pragma omp parallel for schedule(static)
-    for (int i = 0; i < geomL.nxsup; ++i) {
-        double hi = 0.0;
-        for (int j = 0; j < geomL.nsurfz - 1; ++j) {
-
-            int pid1L = geomL.surfp[i][j];
-            int pid2L = geomL.surfp[i][j+1];
-            
-            int pid1R = geomR.surfp[i][j];
-            int pid2R = geomR.surfp[i][j+1];
-
-            if (pid1L < 0 || pid2L < 0 || pid1R < 0 || pid2R < 0) continue;
-
-            // Z方向の幅 
-            double yL_1 = stateL.disp[pid1L].uy ;
-            double yL_2 = stateL.disp[pid2L].uy ;
-            double yL_avg = 0.5 * (yL_1 + yL_2);
-
-            // 右声帯のY座標 (現在の変位 + 速度×dt による予測)
-            double yR_1 = stateR.disp[pid1R].uy ;
-            double yR_2 = stateR.disp[pid2R].uy ;
-            double yR_avg = 0.5 * (yR_1 + yR_2);
-
-            double gap = yR_avg - yL_avg;
-
-            // Z方向の幅 (現在の変位 + 速度×dt による予測)
-            double zL_1 = stateL.disp[pid1L].uz ;
-            double zL_2 = stateL.disp[pid2L].uz ;
-            double ztmp = std::abs(zL_2 - zL_1);
-
-            // 交差（めり込み）した場合は流路面積を0とする
-            if (gap < 0.0) gap = 0.0;
-            if (!std::isfinite(gap)) gap = 0.0;
-            if (!std::isfinite(ztmp)) ztmp = 0.0;
-
-            double contrib = gap * ztmp;
-
-            hi += contrib;
-        }
-        harea[i] = hi;
-    }
-
-
-    #pragma omp parallel for schedule(static)
-    for (int p = 0; p < static_cast<int>(degreeL.size()); ++p) {
-        for (auto& row : degreeL[p]) {
-            std::fill(row.begin(), row.end(), 0.0);
-        }
-    }
-    #pragma omp parallel for schedule(static)
-    for (int p = 0; p < static_cast<int>(degreeR.size()); ++p) {
-        for (auto& row : degreeR[p]) {
-            std::fill(row.begin(), row.end(), 0.0);
-        }
-    }
-
-    for (int i = 1; i < geomL.nxsup - 1; ++i) {
-        for (int j = 1; j < geomL.nsurfz - 1; ++j) {
-            
-            int pid_leftL  = geomL.surfp[i-1][j];
-            int pid_rightL = geomL.surfp[i+1][j];
-            int pid_downL  = geomL.surfp[i][j-1];
-            int pid_upL    = geomL.surfp[i][j+1];
-
-            if (pid_leftL >= 0 && pid_rightL >= 0 && pid_downL >= 0 && pid_upL >= 0) {
-                double dxL  = 0.5 * (stateL.disp[pid_rightL].ux - stateL.disp[pid_leftL].ux);
-                double dy1L = 0.5 * (stateL.disp[pid_rightL].uy - stateL.disp[pid_leftL].uy);
-                double dy2L = 0.5 * (stateL.disp[pid_upL].uy   - stateL.disp[pid_downL].uy);
-                double dzL  = 0.5 * (stateL.disp[pid_upL].uz   - stateL.disp[pid_downL].uz);
-
-                if (dxL != 0.0) degreeL[0][i][j] = std::atan(dy1L / dxL);
-                if (dzL != 0.0) degreeL[1][i][j] = std::atan(dy2L / dzL);
-            }
-
-
-            int pid_leftR  = geomR.surfp[i-1][j];
-            int pid_rightR = geomR.surfp[i+1][j];
-            int pid_downR  = geomR.surfp[i][j-1];
-            int pid_upR    = geomR.surfp[i][j+1];
-
-            if (pid_leftR >= 0 && pid_rightR >= 0 && pid_downR >= 0 && pid_upR >= 0) {
-                double dxR  = 0.5 * (stateR.disp[pid_rightR].ux - stateR.disp[pid_leftR].ux);
-                double dy1R = 0.5 * (stateR.disp[pid_rightR].uy - stateR.disp[pid_leftR].uy);
-                double dy2R = 0.5 * (stateR.disp[pid_upR].uy   - stateR.disp[pid_downR].uy);
-                double dzR  = 0.5 * (stateR.disp[pid_upR].uz   - stateR.disp[pid_downR].uz);
-
-                if (dxR != 0.0) degreeR[0][i][j] = std::atan(dy1R / dxR);
-                if (dzR != 0.0) degreeR[1][i][j] = std::atan(dy2R / dzR);
-            }
-        }
-    }
+void ForceCalculator::updateChannelSections() {
+    sectionBuilder.build(geomL, stateL, geomR, stateR, sections);
 }
 
-void ForceCalculator::calcDis(int step, int contactIter) {
+void ForceCalculator::applyContactLoads(int step, int contactIter) {
 
 #ifdef PROFILE_CALCDIS
     using Clock = std::chrono::high_resolution_clock;
@@ -676,6 +598,25 @@ void ForceCalculator::calcDis(int step, int contactIter) {
     double debugWorstFyL = 0.0;
     double debugWorstGapC = 0.0;
     double debugWorstGapPrev = 0.0;
+    int monitorCandidatePairs = 0;
+    int monitorPenetratingPairs = 0;
+    int candidatePairCount = 0;
+    int cachedCandidateCount = 0;
+    int twoPointerCandidateCount = 0;
+    int fallbackCandidateCount = 0;
+    int contactPairCount = 0;
+    double maxPenetration = 0.0;
+    int maxPenIL = -1, maxPenIR = -1, maxPenJ = -1;
+    double maxPenX = std::numeric_limits<double>::quiet_NaN();
+    double maxPenGapA = std::numeric_limits<double>::quiet_NaN();
+    double maxPenGapB = std::numeric_limits<double>::quiet_NaN();
+    double maxPenGapC = std::numeric_limits<double>::quiet_NaN();
+    double maxPenDot = std::numeric_limits<double>::quiet_NaN();
+    double maxPenPressure = std::numeric_limits<double>::quiet_NaN();
+    double maxPenForce = std::numeric_limits<double>::quiet_NaN();
+    double maxPenNx = std::numeric_limits<double>::quiet_NaN();
+    double maxPenNy = std::numeric_limits<double>::quiet_NaN();
+    double maxPenNormalAlignment = std::numeric_limits<double>::quiet_NaN();
 
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
@@ -739,6 +680,14 @@ void ForceCalculator::calcDis(int step, int contactIter) {
             lerp(disp[pid0].ux, disp[pid1].ux, s),
             lerp(disp[pid0].uy, disp[pid1].uy, s),
             lerp(disp[pid0].uz, disp[pid1].uz, s)
+        };
+    };
+
+    auto interpVelocity = [&](const auto& velocity, int pid0, int pid1, double s) -> Pos {
+        return Pos{
+            lerp(velocity[pid0].ux, velocity[pid1].ux, s),
+            lerp(velocity[pid0].uy, velocity[pid1].uy, s),
+            lerp(velocity[pid0].uz, velocity[pid1].uz, s)
         };
     };
 
@@ -1060,6 +1009,13 @@ void ForceCalculator::calcDis(int step, int contactIter) {
             const double xb = std::min(Lxmax, Rxmax);
 
             if (xb <= xa + EPS_X) return;
+            ++candidatePairCount;
+
+            const bool touchesMonitor =
+                j == contactMonitorJ &&
+                ((iL <= contactMonitorI && contactMonitorI <= iL + 1) ||
+                 (iR <= contactMonitorI && contactMonitorI <= iR + 1));
+            if (touchesMonitor) ++monitorCandidatePairs;
 
             double sLa, sRa, sLb, sRb;
             Pos pLa, pRa, pLb, pRb;
@@ -1088,6 +1044,7 @@ void ForceCalculator::calcDis(int step, int contactIter) {
                 );
 
             if (!hasPenetration) return;
+            if (touchesMonitor) ++monitorPenetratingPairs;
 
             double sL, sR;
             Pos pL, pR;
@@ -1099,6 +1056,7 @@ void ForceCalculator::calcDis(int step, int contactIter) {
             const double pen = penMean_mm * 1.0e-3;
 
             if (pen <= 0.0 || !std::isfinite(pen)) return;
+            ++contactPairCount;
 
             if (is_first_contact) {
                 std::cout << "\n=== [DEBUG] FIRST XY CONTACT DETECTED ==="
@@ -1113,9 +1071,17 @@ void ForceCalculator::calcDis(int step, int contactIter) {
                 evalPrevAtX(pidL0, pidL1, pidR0, pidR1,
                             xContact, sLprev, sRprev, pLprev, pRprev);
 
-            const double penNowC  = std::max(0.0, -gapC)    * 1.0e-3;
-            const double penPrevC = std::max(0.0, -gapPrev) * 1.0e-3;
-            const double penDot   = (penNowC - penPrevC) / sp.dt;
+            double nx = 0.0;
+            double ny = 0.0;
+            computeXYNormal(pidL0, pidL1, pidR0, pidR1, pL, pR, nx, ny);
+
+            const Pos vL = interpVelocity(stateL.vel, pidL0, pidL1, sL);
+            const Pos vR = interpVelocity(stateR.vel, pidR0, pidR1, sR);
+            // vel is stored in mm/s; only a closing normal velocity adds
+            // one-sided damping pressure.
+            const double normalSeparationSpeed =
+                (vR.x - vL.x) * nx + (vR.y - vL.y) * ny;
+            const double penDot = std::max(0.0, -normalSeparationSpeed) * 1.0e-3;
 
             const double non_linear_term =
                 1.0 + sp.kc2 * omg2 * pen * pen;
@@ -1153,10 +1119,26 @@ void ForceCalculator::calcDis(int step, int contactIter) {
 
             const double F = contact_pressure * area;
 
-            double nx = 0.0;
-            double ny = 0.0;
-
-            computeXYNormal(pidL0, pidL1, pidR0, pidR1, pL, pR, nx, ny);
+            if (pen > maxPenetration) {
+                const double sepX = pR.x - pL.x;
+                const double sepY = pR.y - pL.y;
+                const double sepLen = norm2(sepX, sepY);
+                maxPenetration = pen;
+                maxPenIL = iL;
+                maxPenIR = iR;
+                maxPenJ = j;
+                maxPenX = xContact;
+                maxPenGapA = gapA;
+                maxPenGapB = gapB;
+                maxPenGapC = gapC;
+                maxPenDot = penDot;
+                maxPenPressure = contact_pressure;
+                maxPenForce = F;
+                maxPenNx = nx;
+                maxPenNy = ny;
+                maxPenNormalAlignment = sepLen > EPS_LEN
+                    ? (nx * sepX + ny * sepY) / sepLen : 0.0;
+            }
 
             const double FxL = -F * nx;
             const double FyL = -F * ny;
@@ -1245,7 +1227,16 @@ void ForceCalculator::calcDis(int step, int contactIter) {
 
     std::vector<ContactSeg> segL;
     std::vector<ContactSeg> segR;
-    std::vector<int> activeR;
+    if (contactIter == 1 || static_cast<int>(contactPairCache.size()) != maxJ) {
+        contactPairCache.assign(maxJ, {});
+    }
+
+    auto rangesAreOrdered = [&](const std::vector<ContactSeg>& segments) {
+        for (std::size_t k = 1; k < segments.size(); ++k) {
+            if (segments[k].xmin < segments[k - 1].xmax - EPS_X) return false;
+        }
+        return true;
+    };
 
     for (int j = 1; j < maxJ - 1; ++j) {
 
@@ -1266,64 +1257,53 @@ void ForceCalculator::calcDis(int step, int contactIter) {
         }
 #endif
 
-        activeR.clear();
-        activeR.reserve(16);
+        std::vector<int> indexL(nSegL + 1, -1);
+        std::vector<int> indexR(nSegR + 1, -1);
+        for (int k = 0; k < static_cast<int>(segL.size()); ++k) indexL[segL[k].i] = k;
+        for (int k = 0; k < static_cast<int>(segR.size()); ++k) indexR[segR[k].i] = k;
 
-        std::size_t rAdd = 0;
-
-        for (const auto& L : segL) {
-
+        auto runCandidate = [&](const ContactSeg& L, const ContactSeg& R, int& counter) {
+            if (std::min(L.xmax, R.xmax) <= std::max(L.xmin, R.xmin) + EPS_X) return;
+            ++counter;
+            processPair(j, L, R);
 #ifdef PROFILE_CALCDIS
-            auto ta0 = now();
+            ++call_process_pairs;
 #endif
+        };
 
-            while (rAdd < segR.size() && segR[rAdd].xmin <= L.xmax + EPS_X) {
-                activeR.push_back(static_cast<int>(rAdd));
-                ++rAdd;
+        // Later contact iterations use the candidate topology found in the
+        // first iteration.  A new time step always performs a full search.
+        if (contactIter > 1 && !contactPairCache[j].empty()) {
+            for (const auto& [iL, iR] : contactPairCache[j]) {
+                if (iL < 0 || iL >= static_cast<int>(indexL.size()) ||
+                    iR < 0 || iR >= static_cast<int>(indexR.size())) continue;
+                const int l = indexL[iL], r = indexR[iR];
+                if (l < 0 || r < 0) continue;
+                runCandidate(segL[l], segR[r], cachedCandidateCount);
             }
+            continue;
+        }
 
-            activeR.erase(
-                std::remove_if(activeR.begin(), activeR.end(),
-                    [&](int idx) {
-                        return segR[idx].xmax <= L.xmin + EPS_X;
-                    }),
-                activeR.end()
-            );
-
-#ifdef PROFILE_CALCDIS
-            {
-                auto ta1 = now();
-                prof_active_ms += elapsed_ms(ta0, ta1);
-
-                call_active_candidates += static_cast<long long>(activeR.size());
-                call_max_activeR = std::max<long long>(
-                    call_max_activeR,
-                    static_cast<long long>(activeR.size())
-                );
-            }
-#endif
-
-            for (int idx : activeR) {
-                const auto& R = segR[idx];
-
-                const double xa = std::max(L.xmin, R.xmin);
-                const double xb = std::min(L.xmax, R.xmax);
-
-                if (xb <= xa + EPS_X) continue;
-
-#ifdef PROFILE_CALCDIS
-                auto tp0 = now();
-#endif
-
-                processPair(j, L, R);
-
-#ifdef PROFILE_CALCDIS
-                {
-                    auto tp1 = now();
-                    prof_pair_ms += elapsed_ms(tp0, tp1);
-                    call_process_pairs++;
+        if (rangesAreOrdered(segL) && rangesAreOrdered(segR)) {
+            std::size_t l = 0, r = 0;
+            while (l < segL.size() && r < segR.size()) {
+                const auto& L = segL[l];
+                const auto& R = segR[r];
+                if (std::min(L.xmax, R.xmax) > std::max(L.xmin, R.xmin) + EPS_X) {
+                    runCandidate(L, R, twoPointerCandidateCount);
+                    if (contactIter == 1) contactPairCache[j].emplace_back(L.i, R.i);
                 }
-#endif
+                if (L.xmax < R.xmax - EPS_X) ++l;
+                else if (R.xmax < L.xmax - EPS_X) ++r;
+                else { ++l; ++r; }
+            }
+        } else {
+            // Non-monotone x geometry is rare; retain a complete, safe
+            // fallback rather than silently missing contact.
+            for (const auto& L : segL) for (const auto& R : segR) {
+                if (std::min(L.xmax, R.xmax) <= std::max(L.xmin, R.xmin) + EPS_X) continue;
+                runCandidate(L, R, fallbackCandidateCount);
+                if (contactIter == 1) contactPairCache[j].emplace_back(L.i, R.i);
             }
         }
     }
@@ -1445,6 +1425,48 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
             prevFdisXR[i][j] = fdisXR[i][j];
             prevFdisYR[i][j] = fdisYR[i][j];
         }
+    }
+
+    if (contactMonitorFile && contactMonitorI >= 0 && contactMonitorJ >= 0 &&
+        contactMonitorI < geomL.nxsup && contactMonitorI < geomR.nxsup &&
+        contactMonitorJ < geomL.nsurfz && contactMonitorJ < geomR.nsurfz) {
+        const int pidL = geomL.surfp[contactMonitorI][contactMonitorJ];
+        const int pidR = geomR.surfp[contactMonitorI][contactMonitorJ];
+        const double gapY = (pidL >= 0 && pidR >= 0)
+            ? stateR.predictedDisp[pidR].uy - stateL.predictedDisp[pidL].uy
+            : std::numeric_limits<double>::quiet_NaN();
+        contactMonitorFile << std::scientific << std::setprecision(12)
+            << step << "," << time << "," << contactIter << ","
+            << contactMonitorI << "," << contactMonitorJ << ","
+            << gapY << ","
+            << monitorCandidatePairs << "," << monitorPenetratingPairs << ","
+            << contactForceL_ij[contactMonitorI][contactMonitorJ] << ","
+            << contactForceR_ij[contactMonitorI][contactMonitorJ] << ","
+            << fdisXL[contactMonitorI][contactMonitorJ] << ","
+            << fdisYL[contactMonitorI][contactMonitorJ] << ","
+            << fdisXR[contactMonitorI][contactMonitorJ] << ","
+            << fdisYR[contactMonitorI][contactMonitorJ] << ","
+            << contactFlag << "," << max_force_diff << "\n";
+    }
+
+    if (contactIterationFile) {
+        contactIterationFile << std::scientific << std::setprecision(12)
+            << step << "," << time << "," << contactIter << ","
+            << contactPairCount << ","
+            << maxPenetration << ","
+            << maxPenIL << "," << maxPenIR << "," << maxPenJ << ","
+            << maxPenX << "," << maxPenGapA << "," << maxPenGapB << "," << maxPenGapC << ","
+            << maxPenDot << "," << maxPenPressure << "," << maxPenForce << ","
+            << maxPenNx << "," << maxPenNy << "," << maxPenNormalAlignment << ","
+            << contactFlag << "," << max_force_diff << "\n";
+    }
+
+    if (contactSearchFile) {
+        contactSearchFile << step << "," << std::scientific << std::setprecision(12)
+            << time << "," << contactIter << ","
+            << candidatePairCount << "," << contactPairCount << ","
+            << cachedCandidateCount << "," << twoPointerCandidateCount << ","
+            << fallbackCandidateCount << "\n";
     }
 
 
@@ -1661,16 +1683,22 @@ void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
 }
 
 double ForceCalculator::findMinHarea() {
-    return *std::min_element(harea.begin(), harea.end());
+    double minimum = std::numeric_limits<double>::infinity();
+    for (int i = 1; i + 1 < static_cast<int>(harea.size()); ++i) {
+        if (!sections.valid[i] || !std::isfinite(harea[i])) continue;
+        minimum = std::min(minimum, harea[i]);
+    }
+    return std::isfinite(minimum) ? minimum : 0.0;
 }
 
 int ForceCalculator::findNsep(double minH) {
-    for (int i = 1; i < nxsup; i++) {
-        if (std::fabs(harea[i] - minH) < 1e-8 || harea[i] <= 0.0) {
+    const int nFlowSections = static_cast<int>(harea.size());
+    for (int i = 1; i + 1 < nFlowSections; i++) {
+        if (sections.valid[i] && (std::fabs(harea[i] - minH) < 1e-8 || harea[i] <= 0.0)) {
             return i + 1;
         }
     }
-    return nxsup;
+    return nFlowSections - 1;
 }
 
 

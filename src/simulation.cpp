@@ -38,7 +38,7 @@ void Simulation::initialize() {
     params.loadFromFile("../input/param.txt", err );
     params.print();
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b4c2.vtu");
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
 
@@ -51,13 +51,13 @@ void Simulation::initialize() {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b4c2.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b4c2.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b8c2.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
@@ -70,8 +70,8 @@ void Simulation::initialize() {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b8c2.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c2.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -202,6 +202,7 @@ void Simulation::run() {
     std::cout << "Monitor surface point (i,j)=(" << monitorI << ", " << monitorJ << ")\n";
     std::cout<<"Monitor Node L idx="<<geomL.points[nearestIdxL].x<<", "<<geomL.points[nearestIdxL].y<<", "<<geomL.points[nearestIdxL].z<<"\n";
     std::cout<<"Monitor Node R idx="<<geomR.points[nearestIdxR].x<<", "<<geomR.points[nearestIdxR].y<<", "<<geomR.points[nearestIdxR].z<<"\n";
+    fCalc.setContactMonitor(monitorI, monitorJ);
 
 
     stateL.mode2uf(geomL, mdataL, 0); 
@@ -304,21 +305,21 @@ void Simulation::run() {
 
         // 面積・角度の更新 (左右の相対距離で計算)
 {        auto t0 = now();
-        fCalc.calcArea();
+        fCalc.updateChannelSections();
         auto t1 = now();
         time_calcArea += elapsed_ms(t0, t1);}
 
 
         // 圧力の計算と、左右への力の分配
 {        auto t0 = now();
-        fCalc.calcForce(t, n);
+        fCalc.applyFluidLoads(t, n);
         auto t1 = now();
         time_calcForce += elapsed_ms(t0, t1);}
 
         if (n % 5 == 0) {
             fa << std::setw(4) << n;
             fp << std::setw(4) << n;
-            for (int i = 0; i < geomL.nxsup; ++i) {
+            for (int i = 0; i < static_cast<int>(fCalc.harea.size()); ++i) {
                 fa << " " << std::setw(8) << fCalc.harea[i] << " ";
                 fp << " " << std::setw(8) << fCalc.psurf[i] << " ";
             }
@@ -340,7 +341,7 @@ void Simulation::run() {
 
             // 1. モード力への変換 (L / R)
 {            auto t0 = now();
-            fCalc.f2mode();
+            fCalc.projectLoadsToModes();
             auto t1 = now();
             time_f2mode += elapsed_ms(t0, t1);}
             total_f2mode_calls++;
@@ -411,7 +412,7 @@ void Simulation::run() {
 
             // 5. 接触判定とめり込み力計算 (L / R 相対計算)
 	{            auto t0 = now();
-	            fCalc.calcDis(n, icont);
+	            fCalc.applyContactLoads(n, icont);
 	            auto t1 = now();
 	            time_calcDis += elapsed_ms(t0, t1);}
 	            total_calcDis_calls++;
@@ -518,7 +519,7 @@ void Simulation::run() {
 
         // 3Dモデル出力
         if (n % 20 == 0) {
-            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
+            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             //writeLineVTK(fCalc.lineStartL, fCalc.lineEndL, num);
             //std::cout << n << "\n";
             //fCalc.outputForceVectors(n);
@@ -555,6 +556,7 @@ void Simulation::run() {
     std::cout << "mode2uf   : " << time_mode2uf   << " ms\n";
     std::cout << "calcDis   : " << time_calcDis   << " ms\n";
     std::cout << "output    : " << time_output    << " ms\n";
+    std::cout << "for all   : " << (time_calcArea + time_calcDis + time_calcForce + time_f2mode + time_mode2uf + time_output)/60000 << " min\n"; 
 
     
     std::cout << "\n=== Contact Iteration Summary ===\n";

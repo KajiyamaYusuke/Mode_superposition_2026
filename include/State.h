@@ -22,6 +22,4 @@ public:
     void mode2uf(const Geometry& geom, const ModeData& modeData, int step);
     void uf2u();
 
-    void calcArea(const Geometry& geom);
 };
-

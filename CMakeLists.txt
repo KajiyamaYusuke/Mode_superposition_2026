@@ -21,13 +21,17 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 find_package(OpenMP REQUIRED)
 
 add_executable(simulation
+    src/channelSections.cpp
     src/forceCalculator.cpp
+    src/flowModel.cpp
     src/geometry.cpp
     src/modedata.cpp
+    src/modalProjector.cpp
     src/readParams.cpp
     src/rungeStep.cpp
     src/simulation.cpp
     src/state.cpp
+    src/surfaceLoad.cpp
     src/main.cpp
 )
 
