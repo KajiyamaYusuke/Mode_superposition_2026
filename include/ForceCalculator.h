@@ -1,7 +1,9 @@
 
 #pragma once
 #include <array>
+#include <filesystem>
 #include <fstream>
+#include <limits>
 #include <utility>
 #include <vector>
 #include "Geometry.h"
@@ -18,6 +20,19 @@
 // the focused components below; this class retains the established contact
 // algorithm and public simulation-facing API.
 class ForceCalculator {
+public:
+    // Point fields written to the combined VTU for inspecting fluid-to-surface
+    // coupling.  Points outside the medial surface retain NaN / -1 markers.
+    struct FluidVisualizationFields {
+        std::vector<std::array<double, 3>> forceN;
+        std::vector<double> pressurePa;
+        std::vector<double> forceMagnitudeN;
+        std::vector<double> planeLowerIndex;
+        std::vector<double> planeUpperWeight;
+        std::vector<double> planeCoordinate;
+        std::vector<double> active;
+    };
+
 private:
     // Declared before the compatibility references below so their storage is
     // constructed first.
@@ -26,6 +41,11 @@ private:
     SurfaceLoad surfaceLoad;
     ModalProjector modalProjector;
     FlowModel flowModel;
+    std::filesystem::path outputDirectory_ = "../output";
+    int lastSeparationIndex_ = -1;
+    double lastSeparationX_ = std::numeric_limits<double>::quiet_NaN();
+    double lastBlendEndX_ = std::numeric_limits<double>::quiet_NaN();
+    double lastSeparationPressure_ = std::numeric_limits<double>::quiet_NaN();
 
 public:
     ForceCalculator(const Geometry& geomL, const Geometry& geomR, 
@@ -39,6 +59,22 @@ public:
     void projectLoadsToModes();
     void applyContactLoads(int step = -1, int contactIter = -1);
     void setContactMonitor(int surfaceI, int surfaceJ);
+    void setOutputDirectory(const std::filesystem::path& directory);
+    const std::filesystem::path& outputDirectory() const { return outputDirectory_; }
+    FluidVisualizationFields fluidVisualizationFields() const;
+    double sectionX(int index) const {
+        return (index >= 0 && index < static_cast<int>(sections.x.size()))
+            ? sections.x[index] : std::numeric_limits<double>::quiet_NaN();
+    }
+    double sectionGapCubed(int index) const {
+        return (index >= 0 && index < static_cast<int>(sections.gapCubed.size()))
+            ? sections.gapCubed[index] : std::numeric_limits<double>::quiet_NaN();
+    }
+    double outletPressure() const { return flowModel.outletPressure(); }
+    int separationIndex() const { return lastSeparationIndex_; }
+    double separationX() const { return lastSeparationX_; }
+    double separationBlendEndX() const { return lastBlendEndX_; }
+    double separationPressure() const { return lastSeparationPressure_; }
 
     // Legacy placeholder; retained only because it is part of the old public
     // header.  Contact is calculated by applyContactLoads().
@@ -57,24 +93,17 @@ public:
     std::vector<std::vector<double>>& fzL;
     std::vector<std::vector<double>> fdisL; // 左の接触力バッファ
     std::vector<double> fiL;                // 左のモード力
-    std::vector<std::vector<std::vector<double>>>& degreeL;
 
     std::vector<std::vector<double>>& fxR;
     std::vector<std::vector<double>>& fyR;
     std::vector<std::vector<double>>& fzR;
     std::vector<std::vector<double>> fdisR; // 右の接触力バッファ
     std::vector<double> fiR;                // 右のモード力
-    std::vector<std::vector<std::vector<double>>>& degreeR;
 
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
     std::vector<double> minHarea;  // Minimum area 
     std::vector<double>& harea;  // 流路断面積
-
-    std::vector<double> Uu; // Upstream (Trachea) flow
-    std::vector<double> Pu; // Upstream (Trachea) pressure
-    std::vector<double> Ud; // Downstream (Vocal Tract) flow
-    std::vector<double> Pd; // Downstream (Vocal Tract) pressure
 
     std::vector<std::vector<double>> prevFdisXL;
     std::vector<std::vector<double>> prevFdisYL;
@@ -86,6 +115,9 @@ public:
     double currentUg;
     double currentPg;   // Subglottal pressure at glottis entry
     double max_force_diff;
+    double contact_force_residual = 0.0;
+    double contact_penetration_residual = 0.0;
+    double max_contact_penetration = 0.0;
 
     std::vector<std::vector<double>> contactForceL_ij;
     std::vector<std::vector<double>> contactForceR_ij;
@@ -97,32 +129,10 @@ public:
 
     void resetPreviousContactForce();
 
-private:
-    // Deprecated compatibility implementation.  New calculations use
-    // FlowModel through applyFluidLoads().
-    void calcFlowStep(double t, double dt, double current_min_area);
-
-public:
-
-    // Ishizaka & Flanagan (1972) モデル用
-    // 状態変数 (Previous step values)
-    // Nsecg: subglottal sections, Nsecp: supraglottal sections
-
-    
-    // 現在のステップのUg
     double previousUg = 0.0;
-    
-    
-    double currentPout; // Radiation pressure
-
-    // 物理定数・回路定数 (Initializeで計算または設定)
-    double rho, mu, c_sound; // 空気密度, 粘性係数, 音速
-    double alpha1,alpha2, beta;
-    double Lui, Cui, Lu, Cu, R2; // 気管系定数
-    double La, Ca, Ra, Lr, Rr;   // 声道系定数
-    double lg; // 声門長 (depth)
-
-    bool hasVocalTract;
+    // Local constants used only by wall-pressure reconstruction.  Acoustic
+    // circuit state itself is owned exclusively by FlowModel.
+    double rho = 0.0, mu = 0.0, lg = 0.0;
     std::ofstream debugForceFile;
     std::ofstream contactDebugFile;
     std::ofstream contactMonitorFile;
@@ -136,6 +146,13 @@ public:
     // searches while retaining a full search at every new time step.
     std::vector<std::vector<std::pair<int, int>>> contactPairCache;
 
+    // Per-medial-surface-point records of the *fluid* mapping, before the
+    // contact solver adds its own loads.  They make the coupling observable in
+    // VTU rather than inferred only from force magnitude.
+    std::vector<std::vector<double>> fluidPressureL, fluidPressureR;
+    std::vector<std::vector<int>> fluidPlaneLowerL, fluidPlaneLowerR;
+    std::vector<std::vector<double>> fluidPlaneUpperWeightL, fluidPlaneUpperWeightR;
+
     const Geometry& geomL;
     const Geometry& geomR;
     const ModeData& modeDataL;
@@ -144,6 +161,7 @@ public:
     State& stateR;
     const SimulationParams& sp;
     int nxsup;
+    double previous_contact_penetration_ = 0.0;
 
     double findMinHarea();
     int findNsep(double minH);

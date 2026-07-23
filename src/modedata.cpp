@@ -153,10 +153,10 @@ if (std::regex_search(line, match, rxX)) {
         modes[m] = disp;
     }
 
-    std::cout << "\n=== LOADED MODE KEYS LIST (" << nModes << ") ===" << std::endl;
-    for (const auto& key : modeKeys) {
-        std::cout << key << std::endl;
-    }
+    // std::cout << "\n=== LOADED MODE KEYS LIST (" << nModes << ") ===" << std::endl;
+    // for (const auto& key : modeKeys) {
+    //     std::cout << key << std::endl;
+    // }
     std::cout << "=======================================\n" << std::endl;
 
     std::cout << "ModeData: Loaded " << nModes 

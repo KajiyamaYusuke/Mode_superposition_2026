@@ -42,6 +42,14 @@ struct SimulationParams {
     int    iforce  = 0;        // 力の種類フラグ（Fortran互換）
     double forcef  = 0.0;
     double famp    = 0.0;
+    // Prescribed-force direction for iforce=1:
+    // 0 = common x direction, 1 = opposing y directions (gap direction).
+    int    forceDirection = 0;
+    // Temporary fixed reference for the legacy reduced contact coefficients.
+    // It deliberately does not follow the participating structural modes.
+    double contactReferenceFrequencyHz = 35.0;
+    // Physical distance over which wall pressure blends after separation.
+    double flowBlendLengthMm = 0.5;
     double ps      = 101325.0; // 静圧 [Pa]
     double rho     = 1.225;    // 密度 [kg/m^3] (空気の初期値)
     double mu      = 1.81e-5;  // 動粘性係数 [Pa·s]（参考値）
@@ -76,5 +84,3 @@ struct SimulationParams {
     // デバッグ出力（標準出力か、指定した ostream に出す）
     void print(std::ostream& os = std::cout) const;
 };
-
-

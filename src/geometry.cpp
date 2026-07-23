@@ -1052,9 +1052,9 @@ const double tolZAssign  = 1.0e-2;  // 既存節点をzレベルに割り当て�
 
         rowsByZ[j] = traceAllComponentsAsOneRow(adjByZ[j], nodesByZ[j], points);
 
-        std::cout << "z-level j=" << j
-                  << " nodes=" << rowsByZ[j].size()
-                  << "\n";
+        // std::cout << "z-level j=" << j
+        //           << " nodes=" << rowsByZ[j].size()
+        //           << "\n";
     }
 
     // ------------------------

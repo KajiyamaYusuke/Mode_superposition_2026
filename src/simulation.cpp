@@ -13,6 +13,7 @@
 #include <array>
 #include <string>
 #include <limits>
+#include <filesystem>
 
 
 
@@ -31,14 +32,51 @@ Simulation::Simulation()
     : fCalc(geomL, geomR, mdataL, mdataR, stateL, stateR, params)
 {}
 
-void Simulation::initialize() {
+void Simulation::initialize(const fs::path& parameterFile) {
     std::cout << "[Simulation] Initializing..." << std::endl;
     std::string err ="error";
 
-    params.loadFromFile("../input/param.txt", err );
+    if (!params.loadFromFile(parameterFile, err)) {
+        throw std::runtime_error("Failed to load parameter file '" + parameterFile.string()
+                                 + "': " + err);
+    }
+    if (!params.validate(err)) {
+        throw std::runtime_error("Invalid parameter file '" + parameterFile.string()
+                                 + "': " + err);
+    }
+    std::cout << "[Simulation] Parameter file: " << parameterFile << "\n";
     params.print();
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
+    // Keep the normal output path stable: the analysis scripts in tools/
+    // intentionally consume output/*.dat without selecting a run directory.
+    // This is a latest-result workspace and is overwritten at each execution;
+    // archival copies are an explicit user action rather than an unbounded
+    // accumulation of heavy simulation output.
+    const fs::path absoluteParameterFile = fs::absolute(parameterFile);
+    const fs::path projectRoot = absoluteParameterFile.parent_path().parent_path();
+    runDir = projectRoot / "output";
+    fs::create_directories(runDir);
+    fs::copy_file(absoluteParameterFile, runDir / "params_used.txt",
+                  fs::copy_options::overwrite_existing);
+    std::ofstream manifest(runDir / "manifest.txt");
+    manifest << "parameter_file = " << absoluteParameterFile << "\n"
+             << "nstep = " << params.nstep << "\n"
+             << "dt_s = " << params.dt << "\n"
+             << "nmode = " << params.nmode << "\n"
+             << "ncont = " << params.ncont << "\n"
+             << "iforce = " << params.iforce << "\n"
+             << "contact_reference_frequency_hz = " << params.contactReferenceFrequencyHz << "\n"
+             << "flow_blend_length_mm = " << params.flowBlendLengthMm << "\n"
+             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b2c3.vtu\n"
+             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b10c3.vtu\n"
+             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b2c3.txt\n"
+             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b10c3.txt\n"
+             << "flow_sections = 50\n"
+             << "area_close_m2 = 1e-8\n";
+    fCalc.setOutputDirectory(runDir);
+    std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
+
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b2c3.vtu");
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
 
@@ -51,13 +89,13 @@ void Simulation::initialize() {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b2c3.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b2c3.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b10c3.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
@@ -70,8 +108,8 @@ void Simulation::initialize() {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b10c3.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b10c3.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -140,13 +178,19 @@ void Simulation::run() {
     double P = 1;
     int num = 0;
 
-    std::ofstream fa("../output/area.dat");
-    std::ofstream fu("../output/displace.dat");
-    std::ofstream fp("../output/pressure.dat");
-    std::ofstream fpv("../output/pressure_vt.dat");
-    std::ofstream fuv("../output/airflow_vt.dat");
+    std::ofstream fa(runDir / "area.dat");
+    std::ofstream fu(runDir / "displace.dat");
+    std::ofstream fp(runDir / "pressure.dat");
+    std::ofstream fpv(runDir / "pressure_vt.dat");
+    std::ofstream fuv(runDir / "airflow_vt.dat");
+    std::ofstream fsectionx(runDir / "section_x.dat");
+    std::ofstream fgapcubed(runDir / "gap_cubed.dat");
+    std::ofstream fseparation(runDir / "separation.dat");
+    std::ofstream fdispXY(runDir / "displace_xy.dat");
+    std::ofstream fmodal(runDir / "modal_contribution.csv");
+    std::ofstream fmodalDominant(runDir / "modal_dominant.csv");
     //[DEBUG]
-    std::ofstream fstepdbg("../output/debug_step_summary.csv");
+    std::ofstream fstepdbg(runDir / "debug_step_summary.csv");
     fstepdbg << "step,time,"
             << "minArea,maxArea,idxMinArea,"
             << "currentUg,currentPg,Pd0,Pd9,"
@@ -157,7 +201,7 @@ void Simulation::run() {
             << "icont_used,contactFlag,max_force_diff,"
             << "diverged\n";
     
-    std::ofstream fmodedbg("../output/debug_mode_summary.csv");
+    std::ofstream fmodedbg(runDir / "debug_mode_summary.csv");
     fmodedbg << "step,time,icont,stage,"
             << "maxFiL,imaxFiL,maxFiR,imaxFiR,"
             << "contactFlag,max_force_diff\n";
@@ -165,11 +209,22 @@ void Simulation::run() {
     //std::ofstream fdbg("../output/debug_fluid.dat");
     //std::ofstream contactIterDbg("../output/contact_iteration_debug.csv");
 
-    fa << "# x[m]  area[m^2]\n";
-    fu << "# x[m]  displaceL displaceR\n";
+    fa << "# step  area[mm^2]\n";
+    fu << "# time_s  uyL_mm  uyR_mm\n";
     fp << "# step  pressure[Pa]\n"; 
-    fpv << "# x[m]  pressure[Pa]\n";
-    fuv << "# x[m]  airflow[l/s]\n";
+    fpv << "# step  outlet_pressure[Pa]\n";
+    fuv << "# step  airflow[m^3/s]\n";
+    fsectionx << "# step  section_x[mm]\n";
+    fgapcubed << "# step  integral_g_positive_cubed[mm^4]\n";
+    fseparation << "# step sep_index x_sep[mm] x_blend_end[mm] p_sep[Pa]\n";
+    fdispXY << "# time[s] uxL[mm] uyL[mm] uxR[mm] uyR[mm]\n";
+    fmodal << "step,time_s,side,mode_index,frequency_hz,q,qdot,"
+           << "probe_ux_mm,probe_uy_mm,probe_uz_mm,"
+           << "surface_rms_ux_mm,surface_rms_uy_mm,surface_rms_uz_mm,"
+           << "surface_rms_norm_mm\n";
+    fmodalDominant << "step,time_s,side,"
+                   << "dominant_probe_uy_mode,dominant_probe_uy_mm,"
+                   << "dominant_surface_mode,dominant_surface_rms_mm\n";
 
 
     const double monitorTargetX = 7.2;
@@ -203,6 +258,77 @@ void Simulation::run() {
     std::cout<<"Monitor Node L idx="<<geomL.points[nearestIdxL].x<<", "<<geomL.points[nearestIdxL].y<<", "<<geomL.points[nearestIdxL].z<<"\n";
     std::cout<<"Monitor Node R idx="<<geomR.points[nearestIdxR].x<<", "<<geomR.points[nearestIdxR].y<<", "<<geomR.points[nearestIdxR].z<<"\n";
     fCalc.setContactMonitor(monitorI, monitorJ);
+
+    struct SurfaceModeRms {
+        double ux = 0.0, uy = 0.0, uz = 0.0, norm = 0.0;
+    };
+    auto precomputeSurfaceModeRms = [](const Geometry& geom, const ModeData& modes) {
+        std::vector<SurfaceModeRms> result(modes.nModes);
+        for (int m = 0; m < modes.nModes; ++m) {
+            double sx = 0.0, sy = 0.0, sz = 0.0;
+            int count = 0;
+            for (int i = 0; i < geom.nsurfl; ++i) {
+                for (int j = 0; j < geom.nsurfz; ++j) {
+                    const int pid = geom.surfp[i][j];
+                    if (pid < 0) continue;
+                    const auto& phi = modes.modes[m][pid];
+                    sx += phi.ux * phi.ux;
+                    sy += phi.uy * phi.uy;
+                    sz += phi.uz * phi.uz;
+                    ++count;
+                }
+            }
+            if (count > 0) {
+                result[m].ux = std::sqrt(sx / count);
+                result[m].uy = std::sqrt(sy / count);
+                result[m].uz = std::sqrt(sz / count);
+                result[m].norm = std::sqrt(result[m].ux * result[m].ux
+                                          + result[m].uy * result[m].uy
+                                          + result[m].uz * result[m].uz);
+            }
+        }
+        return result;
+    };
+    const auto surfaceModeRmsL = precomputeSurfaceModeRms(geomL, mdataL);
+    const auto surfaceModeRmsR = precomputeSurfaceModeRms(geomR, mdataR);
+
+    auto writeModalDiagnostics = [&](int step, double time, const char* side,
+                                     const ModeData& modes, const State& state,
+                                     int probeId,
+                                     const std::vector<SurfaceModeRms>& surfaceRms) {
+        int dominantProbeMode = -1;
+        int dominantSurfaceMode = -1;
+        double dominantProbeMagnitude = -1.0;
+        double dominantSurfaceMagnitude = -1.0;
+        for (int m = 0; m < modes.nModes; ++m) {
+            const double scaleMm = state.q[m] * 1.0e3;
+            const auto& phi = modes.modes[m][probeId];
+            const double probeUx = scaleMm * phi.ux;
+            const double probeUy = scaleMm * phi.uy;
+            const double probeUz = scaleMm * phi.uz;
+            const double rmsUx = std::abs(scaleMm) * surfaceRms[m].ux;
+            const double rmsUy = std::abs(scaleMm) * surfaceRms[m].uy;
+            const double rmsUz = std::abs(scaleMm) * surfaceRms[m].uz;
+            const double rmsNorm = std::abs(scaleMm) * surfaceRms[m].norm;
+            fmodal << std::scientific << std::setprecision(12)
+                   << step << "," << time << "," << side << "," << m << ","
+                   << modes.frequencies[m] << "," << state.q[m] << "," << state.qdot[m] << ","
+                   << probeUx << "," << probeUy << "," << probeUz << ","
+                   << rmsUx << "," << rmsUy << "," << rmsUz << "," << rmsNorm << "\n";
+            if (std::abs(probeUy) > dominantProbeMagnitude) {
+                dominantProbeMagnitude = std::abs(probeUy);
+                dominantProbeMode = m;
+            }
+            if (rmsNorm > dominantSurfaceMagnitude) {
+                dominantSurfaceMagnitude = rmsNorm;
+                dominantSurfaceMode = m;
+            }
+        }
+        fmodalDominant << std::scientific << std::setprecision(12)
+                       << step << "," << time << "," << side << ","
+                       << dominantProbeMode << "," << dominantProbeMagnitude << ","
+                       << dominantSurfaceMode << "," << dominantSurfaceMagnitude << "\n";
+    };
 
 
     stateL.mode2uf(geomL, mdataL, 0); 
@@ -319,12 +445,38 @@ void Simulation::run() {
         if (n % 5 == 0) {
             fa << std::setw(4) << n;
             fp << std::setw(4) << n;
+            fsectionx << std::setw(4) << n;
+            fgapcubed << std::setw(4) << n;
             for (int i = 0; i < static_cast<int>(fCalc.harea.size()); ++i) {
                 fa << " " << std::setw(8) << fCalc.harea[i] << " ";
                 fp << " " << std::setw(8) << fCalc.psurf[i] << " ";
+                fsectionx << " " << std::setw(8) << fCalc.sectionX(i) << " ";
+                fgapcubed << " " << std::setw(8) << fCalc.sectionGapCubed(i) << " ";
             }
             fa << "\n";
             fp << "\n";
+            fsectionx << "\n";
+            fgapcubed << "\n";
+            fseparation << n << " " << fCalc.separationIndex() << " "
+                        << fCalc.separationX() << " "
+                        << fCalc.separationBlendEndX() << " "
+                        << fCalc.separationPressure() << "\n";
+            fu << t << " "
+               << stateL.disp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " "
+               << stateR.disp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n";
+            fdispXY << t << " "
+                    << stateL.disp[nearestIdxL].ux - geomL.points[nearestIdxL].x << " "
+                    << stateL.disp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " "
+                    << stateR.disp[nearestIdxR].ux - geomR.points[nearestIdxR].x << " "
+                    << stateR.disp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n";
+            fpv << n << " " << fCalc.outletPressure() << "\n";
+            fuv << n << " " << fCalc.currentUg << "\n";
+        }
+        if (n % params.nwrite == 0) {
+            // q is the committed modal state at t_n, exactly matching the
+            // displacement/area/pressure records written above.
+            writeModalDiagnostics(n, t, "L", mdataL, stateL, nearestIdxL, surfaceModeRmsL);
+            writeModalDiagnostics(n, t, "R", mdataR, stateR, nearestIdxR, surfaceModeRmsR);
         }
         
         int icont_used_this_step = 0;
@@ -418,7 +570,9 @@ void Simulation::run() {
 	            total_calcDis_calls++;
             
             // 収束判定
-            if (fCalc.contactFlag && fCalc.max_force_diff < 1.0e-6) { 
+            if (fCalc.contactFlag
+                && fCalc.contact_force_residual < 1.0e-4
+                && fCalc.contact_penetration_residual < 1.0e-7) {
                 broke_by_convergence = true;
                 break; 
             }
@@ -426,6 +580,39 @@ void Simulation::run() {
                 broke_by_no_contact = true;
                 break;  }
         }
+
+        // applyContactLoads() has just replaced the contact iterate in the
+        // surface load.  Solve once more from the committed t_n state so the
+        // displacement that is finally committed is produced by that exact
+        // final load (also covers contact disappearance and ncont == 0).
+{       auto t0 = now();
+        fCalc.projectLoadsToModes();
+        auto t1 = now();
+        time_f2mode += elapsed_ms(t0, t1); }
+        ++total_f2mode_calls;
+
+        constexpr double newmark_beta_final = 0.275625;
+        constexpr double newmark_gamma_final = 0.55;
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < mdataL.nModes; ++i) {
+            integrator.newmarkStep(fCalc.fiL[i], stateL.q[i], stateL.qdot[i], stateL.qddot[i],
+                                   params.dt, 2.0 * M_PI * mdataL.frequencies[i], params.zetaL,
+                                   newmark_beta_final, newmark_gamma_final,
+                                   stateL.qf[i], stateL.qfdot[i], stateL.qfddot[i]);
+        }
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < mdataR.nModes; ++i) {
+            integrator.newmarkStep(fCalc.fiR[i], stateR.q[i], stateR.qdot[i], stateR.qddot[i],
+                                   params.dt, 2.0 * M_PI * mdataR.frequencies[i], params.zetaR,
+                                   newmark_beta_final, newmark_gamma_final,
+                                   stateR.qf[i], stateR.qfdot[i], stateR.qfddot[i]);
+        }
+{       auto t0 = now();
+        stateL.mode2uf(geomL, mdataL, n + 1);
+        stateR.mode2uf(geomR, mdataR, n + 1);
+        auto t1 = now();
+        time_mode2uf += elapsed_ms(t0, t1); }
+        total_mode2uf_calls += 2;
 
         
         max_icont_used = std::max(max_icont_used, icont_used_this_step);
@@ -438,13 +625,6 @@ void Simulation::run() {
             steps_reached_ncont++;
         }
 
-
-        // 変位ログ出力 (左右両方)
-        if (n % 5 == 0) {
-            fu << n * params.dt << " "
-               << stateL.predictedDisp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " " // L側変位
-               << stateR.predictedDisp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n"; // R側変位
-        }
 
         // {   //[DEBUG]
         //     auto [minA, maxA, idxMinA, idxMaxA] = minMaxIndex(fCalc.harea);
@@ -519,7 +699,7 @@ void Simulation::run() {
 
         // 3Dモデル出力
         if (n % 20 == 0) {
-            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
+            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             //writeLineVTK(fCalc.lineStartL, fCalc.lineEndL, num);
             //std::cout << n << "\n";
             //fCalc.outputForceVectors(n);
@@ -535,19 +715,16 @@ void Simulation::run() {
             num++;
         }
 
-        // 1D流体ログ出力
-        if (n % 5 == 0) {
-            fpv << std::setw(4) << n << " " << std::setw(8) << fCalc.Pd[9] << "\n";
-            fuv << std::setw(4) << n << " " << std::setw(8) << fCalc.currentUg << "\n";
-        }
-        soundSignal.push_back(fCalc.Pd[9]);
+        // The acoustic sample belongs to the same t_n fluid update as the
+        // other scalar outputs above.
+        soundSignal.push_back(fCalc.outletPressure());
         auto t1 = now();
         time_output += elapsed_ms(t0, t1);}
 
     }
     //writeTraceVTK(fCalc.traceL, "../output/traceL.vtk");
     //writeTraceVTK(fCalc.traceR, "../output/traceR.vtk");
-    WavWriter::save(soundSignal, params.dt, "../output/test_sound.wav");
+    WavWriter::save(soundSignal, params.dt, (runDir / "test_sound.wav").string());
     
     std::cout << "\n=== Timing Summary ===\n";
     std::cout << "calcArea  : " << time_calcArea  << " ms\n";
@@ -645,6 +822,7 @@ void Simulation::writeVTKCombined(int step, const Geometry& geomL, const State& 
     num << std::setw(4) << std::setfill('0') << step;
     std::string filename = rdir + "/deform_combined" + num.str() + ".vtu";
 
+    std::filesystem::create_directories(rdir);
     std::ofstream fout(filename);
     if (!fout) {
         std::cerr << "Error: cannot open " << filename << std::endl;

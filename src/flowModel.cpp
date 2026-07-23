@@ -1,12 +1,14 @@
 #include "FlowModel.h"
+#include "FluidConstants.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 void FlowModel::initialize(const SimulationParams& params, const Geometry& geometry,
                            int nSteps) {
     sp_ = &params;
-    rho_ = params.rho; mu_ = params.mu; lg_ = geometry.zmax; xsup_ = geometry.xsup;
+    rho_ = params.rho; mu_ = params.mu;
     Ug_.assign(nSteps, 0.0); minAreaHistory_.assign(nSteps, 0.0);
     Uu_.assign(params.N_sub + 1, 0.0);
     Pu_.assign(params.N_sub + 2, 0.0);
@@ -37,8 +39,26 @@ void FlowModel::initialize(const SimulationParams& params, const Geometry& geome
     } else { La_ = 1e-1; Ca_ = 1e30; Lr_ = Rr_ = 0.0; }
 }
 
-void FlowModel::advance(double time, double dt, double minimumArea, double previousFlow) {
+void FlowModel::advance(double time, double dt, double minimumArea, double previousFlow,
+                        const ChannelSections& sections) {
     previousUg_ = previousFlow;
+    // Distributed glottal inertance and viscosity are calculated from the
+    // same instantaneous sections used by the wall-pressure calculation.
+    double invAreaIntegral = 0.0; // [1/m]
+    double invGapCubedIntegral = 0.0; // [1/m^3]
+    for (int i = 1; i < static_cast<int>(sections.area.size()); ++i) {
+        if (!sections.valid[i - 1] || !sections.valid[i]) continue;
+        const double dxMm = sections.x[i] - sections.x[i - 1];
+        const double areaMm2 = 0.5 * (sections.area[i] + sections.area[i - 1]);
+        const double g3Mm4 = 0.5 * (sections.gapCubed[i] + sections.gapCubed[i - 1]);
+        if (!(dxMm > 0.0) || !std::isfinite(areaMm2) || !std::isfinite(g3Mm4)) continue;
+        if (areaMm2 > kAreaClosedMm2) invAreaIntegral += dxMm * 1.0e3 / areaMm2;
+        if (g3Mm4 > 1.0e-12) invGapCubedIntegral += dxMm * 1.0e9 / g3Mm4;
+    }
+    // Store the equivalent geometric factors in the existing members.  They
+    // are not independent acoustic state and are rebuilt every time step.
+    glottalInertanceGeometry_ = 0.5 * invAreaIntegral;
+    glottalViscousGeometry_ = invGapCubedIntegral;
     calcFlowStep(time, dt, minimumArea);
 }
 
@@ -53,11 +73,10 @@ void FlowModel::calcFlowStep(double time, double dt, double minimumArea) {
     Uu_[1] -= dt/(Lui_+Lu_)*(dt/Cu_*Pu_[1]-dt/Cui_*Pu_[0]+R2_*Uu_[1]);
     for (int j=2; j<ng+1; ++j)
         Uu_[j] -= dt/(2.0*Lu_)*(dt/Cu_*Pu_[j]-dt/Cu_*Pu_[j-1]+R2_*Uu_[j]);
-    if (minimumArea > 1e-8) {
-        const double lis = xsup_*1e-3;
-        const double Lg1 = rho_*0.5*lis/minimumArea;
+    if (minimumArea > kAreaClosedM2) {
+        const double Lg1 = rho_ * glottalInertanceGeometry_;
         const double Rk1 = beta_*rho_/(minimumArea*minimumArea);
-        const double Rv1 = 12.0*mu_*lis*(lg_*1e-3)*(lg_*1e-3)/std::pow(minimumArea,3.0);
+        const double Rv1 = 12.0 * mu_ * glottalViscousGeometry_;
         double guess = currentUg_;
         for (int k=0;k<100;++k) {
             const double f = Rk1*std::abs(guess)*guess + Rv1*guess

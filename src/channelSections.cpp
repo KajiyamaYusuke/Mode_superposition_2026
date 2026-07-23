@@ -37,41 +37,69 @@ bool intersectAtX(const Geometry& geom, const State& state, int j,
     return std::isfinite(result.y) && std::isfinite(result.z);
 }
 
-double polygonAreaYZ(const std::vector<SectionPoint>& left,
-                     const std::vector<SectionPoint>& right) {
-    std::vector<SectionPoint> polygon;
-    polygon.reserve(left.size() + right.size());
-    polygon.insert(polygon.end(), left.begin(), left.end());
-    for (auto it = right.rbegin(); it != right.rend(); ++it) polygon.push_back(*it);
-    if (polygon.size() < 3) return 0.0;
+struct GapIntegrals { double area = 0.0, cubed = 0.0; };
 
-    double twiceArea = 0.0;
-    for (size_t k = 0; k < polygon.size(); ++k) {
-        const auto& a = polygon[k];
-        const auto& b = polygon[(k + 1) % polygon.size()];
-        twiceArea += a.y * b.z - b.y * a.z;
+double interpolateYAtZ(const std::vector<SectionPoint>& curve, double z) {
+    for (size_t i = 0; i + 1 < curve.size(); ++i) {
+        const double z0 = curve[i].z, z1 = curve[i + 1].z;
+        if ((z - z0) * (z - z1) > 0.0) continue;
+        const double dz = z1 - z0;
+        const double s = std::abs(dz) > 1.0e-12 ? (z - z0) / dz : 0.5;
+        return curve[i].y + s * (curve[i + 1].y - curve[i].y);
     }
-    return 0.5 * std::abs(twiceArea);
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
-void buildSurfaceAngles(const Geometry& geom, const State& state,
-                        std::vector<std::vector<std::vector<double>>>& degree) {
-    for (auto& component : degree)
-        for (auto& row : component) std::fill(row.begin(), row.end(), 0.0);
+GapIntegrals positiveGapIntegralsYZ(std::vector<SectionPoint> left,
+                                    std::vector<SectionPoint> right,
+                                    double gapSign) {
+    if (left.size() < 2 || right.size() < 2) return {};
+    auto byZ = [](const SectionPoint& a, const SectionPoint& b) { return a.z < b.z; };
+    std::sort(left.begin(), left.end(), byZ);
+    std::sort(right.begin(), right.end(), byZ);
+    const double zLow = std::max(left.front().z, right.front().z);
+    const double zHigh = std::min(left.back().z, right.back().z);
+    if (!(zHigh > zLow)) return {};
 
-    for (int i = 1; i < geom.nxsup - 1; ++i) {
-        for (int j = 1; j < geom.nsurfz - 1; ++j) {
-            const int il = geom.surfp[i - 1][j], ir = geom.surfp[i + 1][j];
-            const int jd = geom.surfp[i][j - 1], ju = geom.surfp[i][j + 1];
-            if (il < 0 || ir < 0 || jd < 0 || ju < 0) continue;
-            const double dx = 0.5 * (state.disp[ir].ux - state.disp[il].ux);
-            const double dyx = 0.5 * (state.disp[ir].uy - state.disp[il].uy);
-            const double dz = 0.5 * (state.disp[ju].uz - state.disp[jd].uz);
-            const double dyz = 0.5 * (state.disp[ju].uy - state.disp[jd].uy);
-            if (std::abs(dx) > 1e-12) degree[0][i][j] = std::atan(dyx / dx);
-            if (std::abs(dz) > 1e-12) degree[1][i][j] = std::atan(dyz / dz);
+    // A shared physical z grid prevents a deformed left j-line from being
+    // integrated against a different physical point on the right surface.
+    std::vector<double> zGrid{zLow, zHigh};
+    for (const auto& p : left)  if (p.z > zLow && p.z < zHigh) zGrid.push_back(p.z);
+    for (const auto& p : right) if (p.z > zLow && p.z < zHigh) zGrid.push_back(p.z);
+    std::sort(zGrid.begin(), zGrid.end());
+    zGrid.erase(std::unique(zGrid.begin(), zGrid.end(), [](double a, double b) {
+        return std::abs(a - b) < 1.0e-12;
+    }), zGrid.end());
+
+    GapIntegrals out;
+    for (size_t k = 0; k + 1 < zGrid.size(); ++k) {
+        const double z0 = zGrid[k], z1 = zGrid[k + 1], dz = z1 - z0;
+        const double g0 = gapSign * (interpolateYAtZ(right, z0) - interpolateYAtZ(left, z0));
+        const double g1 = gapSign * (interpolateYAtZ(right, z1) - interpolateYAtZ(left, z1));
+        if (!(dz > 0.0) || !std::isfinite(g0) || !std::isfinite(g1)) {
+            return {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()};
         }
+        auto integratePositiveLinear = [&](double a, double b, double length) {
+            GapIntegrals part;
+            if (a >= 0.0 && b >= 0.0) {
+                part.area = 0.5 * (a + b) * length;
+                part.cubed = 0.25 * (a*a*a + a*a*b + a*b*b + b*b*b) * length;
+            } else if (a >= 0.0 && b < 0.0) {
+                const double positiveLength = length * a / (a - b);
+                part.area = 0.5 * a * positiveLength;
+                part.cubed = 0.25 * a*a*a * positiveLength;
+            } else if (a < 0.0 && b >= 0.0) {
+                const double positiveLength = length * b / (b - a);
+                part.area = 0.5 * b * positiveLength;
+                part.cubed = 0.25 * b*b*b * positiveLength;
+            }
+            return part;
+        };
+        const auto part = integratePositiveLinear(g0, g1, dz);
+        out.area += part.area;
+        out.cubed += part.cubed;
     }
+    return out;
 }
 } // namespace
 
@@ -82,10 +110,62 @@ void ChannelSections::resize(const Geometry& left, const Geometry& right, int nS
     sigma.assign(nx, 0.0);
     x.assign(nx, 0.0);
     area.assign(nx, 0.0);
+    gapCubed.assign(nx, 0.0);
     valid.assign(nx, false);
     for (int k = 0; k < nx; ++k) sigma[k] = nx > 1 ? static_cast<double>(k) / (nx - 1) : 0.0;
-    degreeL.assign(2, std::vector<std::vector<double>>(left.nxsup, std::vector<double>(nzL, 0.0)));
-    degreeR.assign(2, std::vector<std::vector<double>>(right.nxsup, std::vector<double>(nzR, 0.0)));
+
+    // Preserve the narrowest initial i-grid slice as an explicit flow plane.
+    // This is only used to choose the fixed material labels; all subsequent
+    // areas are still calculated from interpolated intersections with the
+    // deformed x = const planes below.
+    const int nCommonI = std::min(left.nxsup, right.nxsup);
+    const int nCommonJ = std::min(left.nsurfz, right.nsurfz);
+    double meanInitialGap = 0.0;
+    int initialGapCount = 0;
+    for (int i = 0; i < nCommonI; ++i) {
+        for (int j = 0; j < nCommonJ; ++j) {
+            const int il = left.surfp[i][j];
+            const int ir = right.surfp[i][j];
+            if (il < 0 || ir < 0) continue;
+            meanInitialGap += right.points[ir].y - left.points[il].y;
+            ++initialGapCount;
+        }
+    }
+    gapSign = (initialGapCount > 0 && meanInitialGap < 0.0) ? -1.0 : 1.0;
+
+    double minimumArea = std::numeric_limits<double>::infinity();
+    for (int i = 0; i < nCommonI; ++i) {
+        std::vector<SectionPoint> leftSlice, rightSlice;
+        leftSlice.reserve(nCommonJ);
+        rightSlice.reserve(nCommonJ);
+        bool complete = true;
+        for (int j = 0; j < nCommonJ; ++j) {
+            const int il = left.surfp[i][j];
+            const int ir = right.surfp[i][j];
+            if (il < 0 || ir < 0) { complete = false; break; }
+            leftSlice.push_back({left.points[il].x, left.points[il].y, left.points[il].z});
+            rightSlice.push_back({right.points[ir].x, right.points[ir].y, right.points[ir].z});
+        }
+        if (!complete) continue;
+        const auto integrals = positiveGapIntegralsYZ(leftSlice, rightSlice, gapSign);
+        if (std::isfinite(integrals.area) && integrals.area < minimumArea) {
+            minimumArea = integrals.area;
+            referenceConstrictionI = i;
+        }
+    }
+
+    if (referenceConstrictionI >= 0 && nCommonI > 1 && nx > 2) {
+        referenceConstrictionSigma =
+            static_cast<double>(referenceConstrictionI) / (nCommonI - 1);
+
+        // Replace the closest regular station, then sort so that all later
+        // pressure interpolation remains ordered in material coordinate.
+        const int kAnchor = std::clamp(
+            static_cast<int>(std::lround(referenceConstrictionSigma * (nx - 1))),
+            1, nx - 2);
+        sigma[kAnchor] = referenceConstrictionSigma;
+        std::sort(sigma.begin(), sigma.end());
+    }
 }
 
 void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftState,
@@ -94,19 +174,6 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
     const int nx = static_cast<int>(sections.sigma.size());
     const int nz = std::min(leftGeom.nsurfz, rightGeom.nsurfz);
     if (nx < 2 || nz < 2) return;
-
-    // Determine a deformed material centreline from the central z line.  The
-    // sigma labels stay fixed, while their physical x positions can stretch.
-    const int jMid = nz / 2;
-    auto centerXAt = [&](double sigma) {
-        const double u = sigma * (std::min(leftGeom.nxsup, rightGeom.nxsup) - 1);
-        const int i0 = std::max(0, std::min(static_cast<int>(u), std::min(leftGeom.nxsup, rightGeom.nxsup) - 2));
-        const double a = u - i0;
-        const int l0 = leftGeom.surfp[i0][jMid], l1 = leftGeom.surfp[i0 + 1][jMid];
-        const int r0 = rightGeom.surfp[i0][jMid], r1 = rightGeom.surfp[i0 + 1][jMid];
-        return 0.5 * ((1.0-a)*leftState.disp[l0].ux + a*leftState.disp[l1].ux
-                    + (1.0-a)*rightState.disp[r0].ux + a*rightState.disp[r1].ux);
-    };
 
     // Every requested section is clamped to the x range common to all surface
     // flow lines.  A failed cut is therefore never silently converted to A=0.
@@ -131,29 +198,42 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
 
     for (int i = 0; i < nx; ++i) {
         if (!(commonLow <= commonHigh) || !std::isfinite(commonLow) || !std::isfinite(commonHigh)) {
-            sections.x[i] = centerXAt(sections.sigma[i]);
+            sections.x[i] = std::numeric_limits<double>::quiet_NaN();
             sections.valid[i] = false;
             sections.area[i] = std::numeric_limits<double>::quiet_NaN();
+            sections.gapCubed[i] = std::numeric_limits<double>::quiet_NaN();
             continue;
         }
-        sections.x[i] = std::clamp(centerXAt(sections.sigma[i]), commonLow, commonHigh);
+        // Equal spacing in the instantaneous common physical range guarantees
+        // strictly ordered, non-duplicated flow planes even when material
+        // planes near an end clamp to the same x coordinate.
+        sections.x[i] = commonLow + (commonHigh - commonLow)
+            * (nx > 1 ? static_cast<double>(i) / (nx - 1) : 0.0);
         std::vector<SectionPoint> left, right;
         left.reserve(nz); right.reserve(nz);
         bool complete = true;
+        const int nCommonI = std::min(leftGeom.nxsup, rightGeom.nxsup);
+        const int preferredSegment = std::clamp(
+            static_cast<int>(std::lround((sections.x[i] - commonLow)
+                / std::max(commonHigh - commonLow, 1.0e-12) * (nCommonI - 1))),
+            0, std::max(0, nCommonI - 2));
         for (int j = 0; j < nz; ++j) {
             SectionPoint pl{}, pr{};
-            complete = intersectAtX(leftGeom, leftState, j, sections.x[i], i, pl)
-                    && intersectAtX(rightGeom, rightState, j, sections.x[i], i, pr);
+            // The preferred segment must be derived from the material sigma,
+            // not from the 50-section index.  Otherwise a 50-section flow
+            // grid on a differently sized surface mesh changes branches when
+            // a tilted surface intersects a plane more than once.
+            complete = intersectAtX(leftGeom, leftState, j, sections.x[i], preferredSegment, pl)
+                    && intersectAtX(rightGeom, rightState, j, sections.x[i], preferredSegment, pr);
             if (!complete) break;
             left.push_back(pl); right.push_back(pr);
         }
         sections.valid[i] = complete;
         // Invalid is distinct from a genuine closed section.  Keep a benign
         // value here; FlowModel will explicitly ignore invalid sections.
-        sections.area[i] = complete ? polygonAreaYZ(left, right)
-                                    : std::numeric_limits<double>::quiet_NaN();
+        const auto integrals = complete ? positiveGapIntegralsYZ(left, right, sections.gapSign)
+                                        : GapIntegrals{std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()};
+        sections.area[i] = integrals.area;
+        sections.gapCubed[i] = integrals.cubed;
     }
-
-    buildSurfaceAngles(leftGeom, leftState, sections.degreeL);
-    buildSurfaceAngles(rightGeom, rightState, sections.degreeR);
 }

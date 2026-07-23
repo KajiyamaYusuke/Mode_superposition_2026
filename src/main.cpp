@@ -1,19 +1,17 @@
 #include "Simulation.h"
 #include <iostream>
-#include <iomanip>
-#include <iostream>
+#include <filesystem>
 
-int main() {
+int main(int argc, char* argv[]) {
     Simulation sim;
 
-    sim.initialize();
-    sim.params.iforce = 0;
+    const fs::path parameterFile = argc >= 2 ? argv[1] : "../input/param.txt";
+    sim.initialize(parameterFile);
 
     sim.run();
 
 
     return 0;
 }
-
 
 

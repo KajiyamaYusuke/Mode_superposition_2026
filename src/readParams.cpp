@@ -52,7 +52,11 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         inputDir  = nextLine();
         resultDir = nextLine();
 
-        iforce = std::stoi(nextLine());
+        // The historical format contains this first iforce slot before the
+        // acoustic constants and a second, effective slot below.  Keep
+        // consuming it so existing files remain readable, but do not let an
+        // accidental duplicate silently obscure which value drives the run.
+        const int legacyIforce = std::stoi(nextLine());
         ps     = std::stod(nextLine());
         rho    = std::stod(nextLine());
         mu     = std::stod(nextLine());
@@ -62,6 +66,29 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         iforce  = std::stoi(nextLine());
         forcef  = std::stod(nextLine());
         famp    = std::stod(nextLine());
+
+        // Optional trailing values, in order:
+        // forceDirection (0/1), contactReferenceFrequencyHz, flowBlendLengthMm.
+        // A frequency can be supplied without forceDirection because it is
+        // unambiguously not 0 or 1 in ordinary use.
+        std::vector<std::string> optional;
+        for (std::string value = nextLine(); !value.empty(); value = nextLine()) optional.push_back(value);
+        std::size_t optionalIndex = 0;
+        if (!optional.empty()) {
+            const double first = std::stod(optional[0]);
+            if (std::abs(first) < 1.0e-12 || std::abs(first - 1.0) < 1.0e-12) {
+                forceDirection = static_cast<int>(first);
+                optionalIndex = 1;
+            }
+        }
+        if (optionalIndex < optional.size()) contactReferenceFrequencyHz = std::stod(optional[optionalIndex++]);
+        if (optionalIndex < optional.size()) flowBlendLengthMm = std::stod(optional[optionalIndex++]);
+        if (optionalIndex != optional.size()) throw std::runtime_error("too many optional parameter values");
+        if (legacyIforce != iforce) {
+            std::cerr << "[Parameters] legacy iforce=" << legacyIforce
+                      << " differs from effective iforce=" << iforce
+                      << "; using the latter.\n";
+        }
     } catch (...) {
         err = "Parse error (check file format)";
         return false;
@@ -75,6 +102,25 @@ bool SimulationParams::validate(std::string& err) const {
     if (nstep <= 0) { err = "nstep must be > 0"; return false; }
     if (dt <= 0.0)  { err = "dt must be > 0"; return false; }
     if (nwrite <= 0){ err = "nwrite must be > 0"; return false; }
+    if (ncont < 0)  { err = "ncont must be >= 0"; return false; }
+    if (N_sub < 1)  { err = "N_sub must be >= 1"; return false; }
+    if (N_vt < 1)   { err = "N_vt must be >= 1"; return false; }
+    if (iforce < 0 || iforce > 1) {
+        err = "iforce must be 0 (flow) or 1 (prescribed force)";
+        return false;
+    }
+    if (forceDirection < 0 || forceDirection > 1) {
+        err = "forceDirection must be 0 (x) or 1 (opposing y)";
+        return false;
+    }
+    if (contactReferenceFrequencyHz <= 0.0) {
+        err = "contactReferenceFrequencyHz must be > 0";
+        return false;
+    }
+    if (flowBlendLengthMm <= 0.0) {
+        err = "flowBlendLengthMm must be > 0";
+        return false;
+    }
     // 追加チェック（例: ファイル/ディレクトリ存在確認を入れるならここ）
     return true;
 }
@@ -94,6 +140,9 @@ void SimulationParams::print(std::ostream& os) const {
     os << "  iforce  = " << iforce << "\n";
     os << "  forcef  = " << forcef << "\n";
     os << "  famp    = " << famp << "\n";
+    os << "  forceDirection = " << forceDirection << "\n";
+    os << "  contactReferenceFrequencyHz = " << contactReferenceFrequencyHz << "\n";
+    os << "  flowBlendLengthMm = " << flowBlendLengthMm << "\n";
     os << "  ps      = " << ps << " [Pa]\n";
     os << "  rho     = " << rho << " [kg/m^3]\n";
     os << "  mu      = " << mu << " [Pa·s]\n";
