@@ -17,6 +17,19 @@ void State::initialize(int nPoints_, int nModes_, int nSteps_, const Geometry& g
     predictedDisp.assign(nPoints, Displacement());
     vel.assign(nPoints, Displacement());
 
+    std::vector<unsigned char> isSurfacePoint(nPoints, 0);
+    surfacePointIds.clear();
+    surfacePointIds.reserve(static_cast<std::size_t>(geom.nsurfl) * geom.nsurfz);
+    for (int i = 0; i < geom.nsurfl; ++i) {
+        for (int j = 0; j < geom.nsurfz; ++j) {
+            const int pointId = geom.surfp[i][j];
+            if (pointId >= 0 && pointId < nPoints && !isSurfacePoint[pointId]) {
+                isSurfacePoint[pointId] = 1;
+                surfacePointIds.push_back(pointId);
+            }
+        }
+    }
+
     #pragma omp parallel for schedule(static)
     for(int i = 0; i < nPoints; i++){
         disp[i].ux = 0.0 + geom.points[i].x;
@@ -73,6 +86,43 @@ void State::mode2uf(const Geometry& geom, const ModeData& modeData, int step) {
 
     }
 
+}
+
+void State::mode2ufSurface(const Geometry& geom, const ModeData& modeData, int step) {
+    if (step < 0 || step >= nSteps) return;
+
+    #pragma omp parallel for schedule(static)
+    for (int surfaceIndex = 0;
+         surfaceIndex < static_cast<int>(surfacePointIds.size());
+         ++surfaceIndex) {
+        const int i = surfacePointIds[surfaceIndex];
+        double predUx = 0.0;
+        double predUy = 0.0;
+        double predUz = 0.0;
+        double velUx = 0.0;
+        double velUy = 0.0;
+        double velUz = 0.0;
+
+        for (int m = 0; m < nModes; ++m) {
+            const double qi = qf[m];
+            const double qdi = qfdot[m];
+            const auto& modeAtPoint = modeData.modes[m][i];
+
+            predUx += modeAtPoint.ux * qi * 1.0e3;
+            predUy += modeAtPoint.uy * qi * 1.0e3;
+            predUz += modeAtPoint.uz * qi * 1.0e3;
+            velUx += modeAtPoint.ux * qdi * 1.0e3;
+            velUy += modeAtPoint.uy * qdi * 1.0e3;
+            velUz += modeAtPoint.uz * qdi * 1.0e3;
+        }
+
+        predictedDisp[i].ux = predUx + geom.points[i].x;
+        predictedDisp[i].uy = predUy + geom.points[i].y;
+        predictedDisp[i].uz = predUz + geom.points[i].z;
+        vel[i].ux = velUx;
+        vel[i].uy = velUy;
+        vel[i].uz = velUz;
+    }
 }
 
 

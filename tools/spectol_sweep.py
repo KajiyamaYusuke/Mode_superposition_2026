@@ -16,7 +16,7 @@ OUTPUT_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/airflow_vt.dat
 DISP_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/displace.dat"  # ★追加：変位データ
 
 # スイープする圧力のリスト (Pa)
-pressure_list = [1300]
+pressure_list = [600, 700, 800, 900, 1000, 1100, 1200, 1300]
 
 # 解析設定
 sim_dt = 1.0e-5
@@ -179,16 +179,16 @@ def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r
 if __name__ == "__main__":
     for p in pressure_list:
         print(f"========== Start Simulation for Ps = {p} Pa ==========")
-        # update_param_file(PARAM_FILE, p)
+        update_param_file(PARAM_FILE, p)
         
-        # print("[実行中] C++ソルバーを計算しています...")
-        # # cwdを付与してルートで実行させる
-        # result = subprocess.run([EXECUTABLE], capture_output=True, text=True)
+        print("[実行中] C++ソルバーを計算しています...")
+        # cwdを付与してルートで実行させる
+        result = subprocess.run([EXECUTABLE], capture_output=True, text=True)
         
-        # if result.returncode != 0:
-        #     print(f"[エラー] シミュレーションが異常終了しました (Ps={p}Pa)")
-        #     print(result.stderr)
-        #     continue
+        if result.returncode != 0:
+            print(f"[エラー] シミュレーションが異常終了しました (Ps={p}Pa)")
+            print(result.stderr)
+            continue
             
         analyze_and_plot(p)
         save_flow_waveform(p)

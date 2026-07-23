@@ -56,16 +56,16 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "iforce = " << params.iforce << "\n"
              << "contact_reference_frequency_hz = " << params.contactReferenceFrequencyHz << "\n"
              << "flow_blend_length_mm = " << params.flowBlendLengthMm << "\n"
-             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b2c2.vtu\n"
-             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b10c2.vtu\n"
-             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b2c2.txt\n"
-             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b10c2.txt\n"
+             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b8c3.vtu\n"
+             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b8c3.vtu\n"
+             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b8c3.txt\n"
+             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b8c3.txt\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
     fCalc.setOutputDirectory(runDir);
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b2c2.vtu");
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
     geomL.print();
@@ -76,13 +76,13 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b2c2.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b2c2.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b10c2.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
@@ -93,8 +93,8 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b10c2.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b10c2.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -114,6 +114,13 @@ void Simulation::initialize(const fs::path& parameterFile) {
     }
 
     stateR.initialize(geomR.nPoints, params.nmode, params.nstep, geomR);
+
+    omegaL.resize(mdataL.nModes);
+    omegaR.resize(mdataR.nModes);
+    for (int i = 0; i < mdataL.nModes; ++i)
+        omegaL[i] = 2.0 * M_PI * mdataL.frequencies[i];
+    for (int i = 0; i < mdataR.nModes; ++i)
+        omegaR[i] = 2.0 * M_PI * mdataR.frequencies[i];
 
     fCalc.initialize();
 
@@ -500,7 +507,7 @@ void Simulation::run() {
                 double q    = stateL.q[i];                       
                 double qdot = stateL.qdot[i];                    
                 double qdd  = stateL.qddot[i];                   
-                double omega = 2.0 * M_PI * mdataL.frequencies[i];
+                double omega = omegaL[i];
 
                 double qf, qfdot, qfddot;
                 integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zetaL,
@@ -519,7 +526,7 @@ void Simulation::run() {
                 double q    = stateR.q[i];                       
                 double qdot = stateR.qdot[i];                    
                 double qdd  = stateR.qddot[i];                   
-                double omega = 2.0 * M_PI * mdataR.frequencies[i];
+                double omega = omegaR[i];
 
                 double qf, qfdot, qfddot;
                 integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zetaR,
@@ -533,8 +540,8 @@ void Simulation::run() {
 
             // 4. モード変位 → 節点変位 (L / R)
 {            auto t0 = now();
-            stateL.mode2uf(geomL, mdataL, n+1);
-            stateR.mode2uf(geomR, mdataR, n+1);
+            stateL.mode2ufSurface(geomL, mdataL, n+1);
+            stateR.mode2ufSurface(geomR, mdataR, n+1);
             auto t1 = now();
             time_mode2uf += elapsed_ms(t0, t1);}
             total_mode2uf_calls += 2;
@@ -573,14 +580,14 @@ void Simulation::run() {
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < mdataL.nModes; ++i) {
             integrator.newmarkStep(fCalc.fiL[i], stateL.q[i], stateL.qdot[i], stateL.qddot[i],
-                                   params.dt, 2.0 * M_PI * mdataL.frequencies[i], params.zetaL,
+                                   params.dt, omegaL[i], params.zetaL,
                                    newmark_beta_final, newmark_gamma_final,
                                    stateL.qf[i], stateL.qfdot[i], stateL.qfddot[i]);
         }
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < mdataR.nModes; ++i) {
             integrator.newmarkStep(fCalc.fiR[i], stateR.q[i], stateR.qdot[i], stateR.qddot[i],
-                                   params.dt, 2.0 * M_PI * mdataR.frequencies[i], params.zetaR,
+                                   params.dt, omegaR[i], params.zetaR,
                                    newmark_beta_final, newmark_gamma_final,
                                    stateR.qf[i], stateR.qfdot[i], stateR.qfddot[i]);
         }

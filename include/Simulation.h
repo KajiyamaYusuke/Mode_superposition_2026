@@ -3,6 +3,7 @@
 #include "ForceCalculator.h"
 #include "TimeIntegrator.h"
 #include <iostream>
+#include <vector>
 
 class Simulation {
 public:
@@ -18,6 +19,8 @@ public:
     ForceCalculator fCalc;
     TimeIntegrator integrator;
     fs::path runDir;
+    std::vector<double> omegaL;
+    std::vector<double> omegaR;
 
     Simulation();
     //     : fCalc(geom, mdata, state, params )            // 必須引数を渡して初期化// TimeIntegrator も同様

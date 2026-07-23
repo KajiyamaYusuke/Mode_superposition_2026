@@ -16,10 +16,12 @@ public:
     std::vector<Displacement> disp;                   // [nPoints]
     std::vector<Displacement> vel;
     std::vector<Displacement> predictedDisp;
+    std::vector<int> surfacePointIds;
 
 
     void initialize(int nPoints_, int nModes_, int nSteps, const Geometry& geom);
     void mode2uf(const Geometry& geom, const ModeData& modeData, int step);
+    void mode2ufSurface(const Geometry& geom, const ModeData& modeData, int step);
     void uf2u();
 
 };
