@@ -1,6 +1,5 @@
 
 #pragma once
-#include <array>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -21,18 +20,6 @@
 // algorithm and public simulation-facing API.
 class ForceCalculator {
 public:
-    // Point fields written to the combined VTU for inspecting fluid-to-surface
-    // coupling.  Points outside the medial surface retain NaN / -1 markers.
-    struct FluidVisualizationFields {
-        std::vector<std::array<double, 3>> forceN;
-        std::vector<double> pressurePa;
-        std::vector<double> forceMagnitudeN;
-        std::vector<double> planeLowerIndex;
-        std::vector<double> planeUpperWeight;
-        std::vector<double> planeCoordinate;
-        std::vector<double> active;
-    };
-
 private:
     // Declared before the compatibility references below so their storage is
     // constructed first.
@@ -61,7 +48,6 @@ public:
     void setContactMonitor(int surfaceI, int surfaceJ);
     void setOutputDirectory(const std::filesystem::path& directory);
     const std::filesystem::path& outputDirectory() const { return outputDirectory_; }
-    FluidVisualizationFields fluidVisualizationFields() const;
     double sectionX(int index) const {
         return (index >= 0 && index < static_cast<int>(sections.x.size()))
             ? sections.x[index] : std::numeric_limits<double>::quiet_NaN();
@@ -76,28 +62,17 @@ public:
     double separationBlendEndX() const { return lastBlendEndX_; }
     double separationPressure() const { return lastSeparationPressure_; }
 
-    // Legacy placeholder; retained only because it is part of the old public
-    // header.  Contact is calculated by applyContactLoads().
-    void contactForce();
-    void outputForceVectors(int step) const;
-    void outputCorrespondenceOffsets(int step) const;
-
-    std::vector<std::array<double,3>> traceL;
-    std::vector<std::array<double,3>> traceR;
-
     // Compatibility-facing views.  Storage is owned by the focused components
     // below; retaining these names keeps the contact solver isolated during the
     // migration and avoids changing its numerics.
     std::vector<std::vector<double>>& fxL;
     std::vector<std::vector<double>>& fyL;
     std::vector<std::vector<double>>& fzL;
-    std::vector<std::vector<double>> fdisL; // 左の接触力バッファ
     std::vector<double> fiL;                // 左のモード力
 
     std::vector<std::vector<double>>& fxR;
     std::vector<std::vector<double>>& fyR;
     std::vector<std::vector<double>>& fzR;
-    std::vector<std::vector<double>> fdisR; // 右の接触力バッファ
     std::vector<double> fiR;                // 右のモード力
 
     std::vector<double> psurf;
@@ -122,8 +97,6 @@ public:
     std::vector<std::vector<double>> contactForceL_ij;
     std::vector<std::vector<double>> contactForceR_ij;
 
-    std::vector<std::array<double,3>> lineStartL;
-    std::vector<std::array<double,3>> lineEndL;
     std::vector<std::vector<double>> fdisXL, fdisYL;
     std::vector<std::vector<double>> fdisXR, fdisYR;
 
@@ -146,13 +119,6 @@ public:
     // searches while retaining a full search at every new time step.
     std::vector<std::vector<std::pair<int, int>>> contactPairCache;
 
-    // Per-medial-surface-point records of the *fluid* mapping, before the
-    // contact solver adds its own loads.  They make the coupling observable in
-    // VTU rather than inferred only from force magnitude.
-    std::vector<std::vector<double>> fluidPressureL, fluidPressureR;
-    std::vector<std::vector<int>> fluidPlaneLowerL, fluidPlaneLowerR;
-    std::vector<std::vector<double>> fluidPlaneUpperWeightL, fluidPlaneUpperWeightR;
-
     const Geometry& geomL;
     const Geometry& geomR;
     const ModeData& modeDataL;
@@ -165,6 +131,4 @@ public:
 
     double findMinHarea();
     int findNsep(double minH);
-    int findNearestRightSurfacePointSameJ(int leftI, int j) const;
-
 };

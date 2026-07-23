@@ -18,7 +18,6 @@ public:
     void initialize(int nModes_, const Geometry& geom);
     // VTU から変位を読み込む
     void loadFromVTU(const std::string& filename, const Geometry& geom);
-    void loadFromVTU_old(const std::string& filename, const Geometry& geom);
 
     // テキストから周波数・ダンピングを読み込む
     void loadFreqDamping(const std::string& filename);

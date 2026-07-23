@@ -6,7 +6,7 @@ import scienceplots
 plt.style.use(['science', 'ieee', 'no-latex'])
 
 # 1. datファイルを読み込む（空白区切りやタブ区切りを想定）
-harea = np.loadtxt("../runs/param_20260722_190210/area.dat")
+harea = np.loadtxt("../output/area.dat")
 
 labels = harea[:, 0]        # ← 1列目（横軸のラベル）
 values = harea[:, 1:]  

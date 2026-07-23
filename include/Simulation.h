@@ -26,7 +26,6 @@ public:
 
     void initialize(const fs::path& parameterFile = "../input/param.txt");
     void run();
-    void writeVTK(int step, const Geometry& geom, const State& state, const std::string& rdir, int nwrite);
     void writeVTKCombined(int step, const Geometry& geomL, const State& stateL, 
                       const Geometry& geomR, const State& stateR, 
                       const std::string& rdir, int nwrite);

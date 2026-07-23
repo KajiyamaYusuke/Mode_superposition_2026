@@ -17,14 +17,6 @@
 #endif
 
 
-auto checkNaN = [](double val, const std::string& name) {
-    if (std::isnan(val) || std::isinf(val)) {
-        std::cerr << "[NaN DETECTED] " << name << " = " << val << std::endl;
-    }
-};
-
-
-
 ForceCalculator::ForceCalculator(const Geometry& geomL_, const Geometry& geomR_, 
                                  const ModeData& mdL_, const ModeData& mdR_, 
                                  State& stL_, State& stR_, const SimulationParams& sp_)
@@ -54,13 +46,6 @@ void ForceCalculator::initialize() {
     // --- 左声帯 (L) の変数初期化 ---
     surfaceLoad.resize(geomL, geomR);
     fiL.assign(nModes_L, 0.0);
-
-    fluidPressureL.assign(geomL.nsurfl, std::vector<double>(geomL.nsurfz, std::numeric_limits<double>::quiet_NaN()));
-    fluidPressureR.assign(geomR.nsurfl, std::vector<double>(geomR.nsurfz, std::numeric_limits<double>::quiet_NaN()));
-    fluidPlaneLowerL.assign(geomL.nsurfl, std::vector<int>(geomL.nsurfz, -1));
-    fluidPlaneLowerR.assign(geomR.nsurfl, std::vector<int>(geomR.nsurfz, -1));
-    fluidPlaneUpperWeightL.assign(geomL.nsurfl, std::vector<double>(geomL.nsurfz, std::numeric_limits<double>::quiet_NaN()));
-    fluidPlaneUpperWeightR.assign(geomR.nsurfl, std::vector<double>(geomR.nsurfz, std::numeric_limits<double>::quiet_NaN()));
 
     // --- 右声帯 (R) の変数初期化 ---
     fiR.assign(nModes_R, 0.0);
@@ -197,9 +182,6 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
         std::fill(fxL[i].begin(), fxL[i].end(), 0.0);
         std::fill(fyL[i].begin(), fyL[i].end(), 0.0);
         std::fill(fzL[i].begin(), fzL[i].end(), 0.0);
-        std::fill(fluidPressureL[i].begin(), fluidPressureL[i].end(), std::numeric_limits<double>::quiet_NaN());
-        std::fill(fluidPlaneLowerL[i].begin(), fluidPlaneLowerL[i].end(), -1);
-        std::fill(fluidPlaneUpperWeightL[i].begin(), fluidPlaneUpperWeightL[i].end(), std::numeric_limits<double>::quiet_NaN());
     }
 
     // 右側を右側サイズでクリア
@@ -208,13 +190,7 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
         std::fill(fxR[i].begin(), fxR[i].end(), 0.0);
         std::fill(fyR[i].begin(), fyR[i].end(), 0.0);
         std::fill(fzR[i].begin(), fzR[i].end(), 0.0);
-        std::fill(fluidPressureR[i].begin(), fluidPressureR[i].end(), std::numeric_limits<double>::quiet_NaN());
-        std::fill(fluidPlaneLowerR[i].begin(), fluidPlaneLowerR[i].end(), -1);
-        std::fill(fluidPlaneUpperWeightR[i].begin(), fluidPlaneUpperWeightR[i].end(), std::numeric_limits<double>::quiet_NaN());
     }
-
-    // ここで旧 fdisL/fdisR はクリアしない
-    // 新しい fdisXL/fdisYL/fdisXR/fdisYR は calcDis() 側で管理する
 
     if (sp.iforce == 1) {
         // ==== sin波加振 ====
@@ -385,14 +361,9 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
         lastSeparationX_ = xSep;
         lastBlendEndX_ = xBlendEnd;
         lastSeparationPressure_ = separationPressure;
-        struct PressureSample {
-            double pressure;
-            int lowerPlane;
-            double upperWeight;
-        };
         auto pressureAtSurfaceX = [&](double xNode) {
             if (!std::isfinite(xNode) || !std::isfinite(xSep)) {
-                return PressureSample{0.0, -1, std::numeric_limits<double>::quiet_NaN()};
+                return 0.0;
             }
 
             // Upstream of separation, interpolate only between the common
@@ -419,16 +390,13 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
                 const double dx = x1 - x0;
                 const double w = std::abs(dx) > 1.0e-12
                     ? std::clamp((xNode - x0) / dx, 0.0, 1.0) : 0.5;
-                return PressureSample{
-                    (1.0 - w) * psurf[bestSegment] + w * psurf[bestSegment + 1],
-                    bestSegment, w
-                };
+                return (1.0 - w) * psurf[bestSegment] + w * psurf[bestSegment + 1];
             }
 
                 if (xNode < sections.x.front()) {
-                    return PressureSample{psurf.front(), 0, 0.0};
+                    return psurf.front();
                 }
-                return PressureSample{separationPressure, sepIndex, 0.0};
+                return separationPressure;
             }
 
             // A two-plane smoothstep transition suppresses a non-physical
@@ -437,12 +405,9 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
                 && xBlendEnd > xSep + 1.0e-12) {
                 const double s = std::clamp((xNode - xSep) / (xBlendEnd - xSep), 0.0, 1.0);
                 const double smooth = s * s * (3.0 - 2.0 * s);
-                return PressureSample{
-                    (1.0 - smooth) * separationPressure + smooth * downstreamPressure,
-                    sepIndex, smooth
-                };
+                return (1.0 - smooth) * separationPressure + smooth * downstreamPressure;
             }
-            return PressureSample{downstreamPressure, sepIndex, 1.0};
+            return downstreamPressure;
         };
 
         struct Vector3 { double x, y, z; };
@@ -482,13 +447,8 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
 
                 if (pid_ip1_L >= 0 && pid_im1_L >= 0 && pid_jp1_L >= 0 && pid_jm1_L >= 0) {
                     const int pid_L = geomL.surfp[i][j];
-                    const PressureSample sample = pid_L >= 0
-                        ? pressureAtSurfaceX(stateL.disp[pid_L].ux)
-                        : PressureSample{0.0, -1, std::numeric_limits<double>::quiet_NaN()};
-                    const double pressure = sample.pressure;
-                    fluidPressureL[i][j] = pressure;
-                    fluidPlaneLowerL[i][j] = sample.lowerPlane;
-                    fluidPlaneUpperWeightL[i][j] = sample.upperWeight;
+                    const double pressure = pid_L >= 0
+                        ? pressureAtSurfaceX(stateL.disp[pid_L].ux) : 0.0;
                     applyPressureForce(geomL, stateL, true, i, j, pressure,
                                        fxL[i][j], fyL[i][j], fzL[i][j]);
 
@@ -514,13 +474,8 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
 
                 if (pid_ip1_R >= 0 && pid_im1_R >= 0 && pid_jp1_R >= 0 && pid_jm1_R >= 0) {
                     const int pid_R = geomR.surfp[i][j];
-                    const PressureSample sample = pid_R >= 0
-                        ? pressureAtSurfaceX(stateR.disp[pid_R].ux)
-                        : PressureSample{0.0, -1, std::numeric_limits<double>::quiet_NaN()};
-                    const double pressure = sample.pressure;
-                    fluidPressureR[i][j] = pressure;
-                    fluidPlaneLowerR[i][j] = sample.lowerPlane;
-                    fluidPlaneUpperWeightR[i][j] = sample.upperWeight;
+                    const double pressure = pid_R >= 0
+                        ? pressureAtSurfaceX(stateR.disp[pid_R].ux) : 0.0;
                     applyPressureForce(geomR, stateR, false, i, j, pressure,
                                        fxR[i][j], fyR[i][j], fzR[i][j]);
 
@@ -581,101 +536,6 @@ void ForceCalculator::projectLoadsToModes() {
                            surfaceLoad, fiL, fiR);
 }
 
-ForceCalculator::FluidVisualizationFields ForceCalculator::fluidVisualizationFields() const {
-    const int nLeft = geomL.nPoints;
-    const int nRight = geomR.nPoints;
-    const int nTotal = nLeft + nRight;
-    const double nan = std::numeric_limits<double>::quiet_NaN();
-
-    FluidVisualizationFields out;
-    out.forceN.assign(nTotal, {0.0, 0.0, 0.0});
-    out.pressurePa.assign(nTotal, nan);
-    out.forceMagnitudeN.assign(nTotal, nan);
-    out.planeLowerIndex.assign(nTotal, -1.0);
-    out.planeUpperWeight.assign(nTotal, nan);
-    out.planeCoordinate.assign(nTotal, nan);
-    out.active.assign(nTotal, 0.0);
-
-    auto transfer = [&](const Geometry& geom, int pointOffset,
-                        const std::vector<std::vector<double>>& fx,
-                        const std::vector<std::vector<double>>& fy,
-                        const std::vector<std::vector<double>>& fz,
-                        const std::vector<std::vector<double>>& pressure,
-                        const std::vector<std::vector<int>>& lowerPlane,
-                        const std::vector<std::vector<double>>& upperWeight) {
-        const int ni = std::min(geom.nxsup, static_cast<int>(pressure.size()));
-        for (int i = 0; i < ni; ++i) {
-            const int nj = std::min(geom.nsurfz, static_cast<int>(pressure[i].size()));
-            for (int j = 0; j < nj; ++j) {
-                const int pid = geom.surfp[i][j];
-                if (pid < 0 || pid >= geom.nPoints) continue;
-                const int outputId = pointOffset + pid;
-                const double p = pressure[i][j];
-                const int k = lowerPlane[i][j];
-                const double w = upperWeight[i][j];
-                if (std::isfinite(p)) out.pressurePa[outputId] = p;
-                if (k >= 0) {
-                    out.planeLowerIndex[outputId] = static_cast<double>(k);
-                    out.planeUpperWeight[outputId] = w;
-                    out.planeCoordinate[outputId] = static_cast<double>(k) + w;
-                    out.active[outputId] = 1.0;
-                }
-                if (i < static_cast<int>(fx.size()) && j < static_cast<int>(fx[i].size())) {
-                    const std::array<double, 3> f = {fx[i][j], fy[i][j], fz[i][j]};
-                    out.forceN[outputId] = f;
-                    out.forceMagnitudeN[outputId] = std::sqrt(f[0]*f[0] + f[1]*f[1] + f[2]*f[2]);
-                }
-            }
-        }
-    };
-
-    transfer(geomL, 0, fxL, fyL, fzL,
-             fluidPressureL, fluidPlaneLowerL, fluidPlaneUpperWeightL);
-    transfer(geomR, nLeft, fxR, fyR, fzR,
-             fluidPressureR, fluidPlaneLowerR, fluidPlaneUpperWeightR);
-    return out;
-}
-// void ForceCalculator::contactForce() {
-
-//     contactFlag = false;
-//     double omg1 = 2.0 * M_PI * modeData.frequencies[0]; // 1次固有振動数
-//     double omg2 = omg1 * omg1;
-
-//     for (int i = 0; i < geom.nxsup; ++i) {           // nxsup は計算範囲
-//         for (int j = 1; j < geom.nsurfz - 1; ++j) {  // 2..nsurfz-1 (0-index)
-//             int node = geom.surfp[i][j];
-
-//             double y     = state.disp[node].uy;        // 現在変位
-//             double ydot  = state.vel[node].uy;         // 現在速度
-//             double ymid  = geom.ymid[j];
-//             double yhat  = y + sp.dt * ydot;           // 予測位置
-
-
-//             // 接触状態を判定
-//             bool contact_now    = (y > ymid);          // 現時点で接触
-//             bool contact_future = (yhat > ymid);       // 次ステップで接触
-
-//             if (!contact_now) {
-//                 continue;
-//             }
-
-//             double pen = (ymid - y) * 1e-3; 
-
-//             double f_contact = sp.kc1 * omg2 * pen * (1.0 + sp.kc2 * omg2 * pen * pen);
-
-//             double f_damp =  sp.kc3 * pen * ydot;
-
-//             double f_total = (f_contact + f_damp) * geom.sarea[i][j] * 1e-6;
-
-//             if (f_total > 0.0) { f_total = 0.0; }           
-
-//             fy[i][j] += f_total;
-//             contactFlag = true;
-//         }
-//     } 
-
-// }
-
 void ForceCalculator::updateChannelSections() {
     sectionBuilder.build(geomL, stateL, geomR, stateR, sections);
 }
@@ -722,8 +582,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter) {
 
     contactFlag = false;
     max_force_diff = 0.0;
-    lineStartL.clear();
-    lineEndL.clear();
 
     const double time = step * sp.dt;
 
@@ -1348,30 +1206,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter) {
                 FxR, FyR
             );
 
-            if (j == 35) {
-                lineStartL.push_back({
-                    stateL.predictedDisp[pidL0].ux,
-                    stateL.predictedDisp[pidL0].uy,
-                    stateL.predictedDisp[pidL0].uz
-                });
-                lineEndL.push_back({
-                    stateL.predictedDisp[pidL1].ux,
-                    stateL.predictedDisp[pidL1].uy,
-                    stateL.predictedDisp[pidL1].uz
-                });
-
-                lineStartL.push_back({
-                    stateR.predictedDisp[pidR0].ux,
-                    stateR.predictedDisp[pidR0].uy,
-                    stateR.predictedDisp[pidR0].uz
-                });
-                lineEndL.push_back({
-                    stateR.predictedDisp[pidR1].ux,
-                    stateR.predictedDisp[pidR1].uy,
-                    stateR.predictedDisp[pidR1].uz
-                });
-            }
-
             contactFlag = true;
 
 #ifdef PROFILE_CALCDIS
@@ -1729,127 +1563,6 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
 // 16. 左右に逆向きの力を分配
 // 17. 最後に fdis を fx/fy に加算
 
-#if 0 // Removed legacy duplicate airway solver; FlowModel is the sole owner.
-void ForceCalculator::calcFlowStep(double t, double dt, double min_area) {
-
-    static bool printed_constants = false;
-    // if (t > 0.0 && !printed_constants) {
-    //     std::cout << "\n=== [DEBUG] calcFlowStep Constants at Step 1 ===" << std::scientific << std::setprecision(12) << std::endl;
-    //     std::cout << "ps (Lung Press): " << sp.ps << std::endl;
-    //     std::cout << "rho: " << rho << " | mu: " << mu << std::endl;
-    //     std::cout << "xsup: " << geomL.xsup << " | lg: " << lg << std::endl;
-    //     std::cout << "beta: " << beta << " | R2: " << R2 << std::endl;
-    //     std::cout << "Cu: " << Cu << " | Lu: " << Lu << std::endl;
-    //     std::cout << "La: " << La << " | Ca: " << Ca << std::endl;
-    //     std::cout << "=================================================\n" << std::endl;
-    //     printed_constants = true;
-    // }
-    
-    // --- 1. 声門下 (Subglottal) の更新 ---
-
-    int Nsecp   = sp.N_vt; 
-    int Nsecg   = sp.N_sub; 
-    
-    double rampDuration = 0.05; // 50msかけて立ち上げる
-    double rampFactor = 1.0;
-    
-    if (t < rampDuration) {
-        // Cosine Ramp (滑らか)
-        rampFactor = 0.5 * (1.0 - std::cos(M_PI * t / rampDuration));
-    }
-
-    // --- ランプ適用 ---
-    double currentLungPressure = sp.ps * rampFactor;
-
-    double ug = currentUg;
-    // Pu[1]...Pu[Nsecg]
-    for (int j = 0; j < Nsecg; ++j) {
-
-        Pu[j] += (Uu[j] - Uu[j+1]);
-        //Pu[j] += (dt / C_use) * (Uu[j] - Uu[j+1]);
-    }
-    
-    // 声門直下の圧力ノード (境界)
-    Pu[Nsecg] +=  (Uu[Nsecg] - previousUg);
-    Pu[Nsecg+1] +=  ( previousUg - Ud[0]);
-
-
-    Uu[0]  -= dt / Lui * ( (dt / Cui * Pu[0]) - currentLungPressure );
-
-    // Fortran: Uu(2)=Uu(2)-dt/(Lui+Lu)*(dt/Cu*Pu(2)-dt/Cui*Pu(1)+R2*Uu(2))
-    Uu[1] -= (dt / (Lui + Lu)) * ( dt / Cu * Pu[1] - dt / Cui * Pu[0] + R2 * Uu[1] );
-
-    for (int j = 2; j < Nsecg + 1; ++j) {
-        Uu[j] -= dt / (2.0 * Lu) * ( dt / Cu * Pu[j] - dt / Cu * Pu[j-1] + R2 * Uu[j] );
-    }
-
-
-    // --- 2. 声門部 (Glottal Flow) の更新 ---
-    if (min_area > 1e-8) {
-        double min_area_m2 = min_area;
-        double lis = geomL.xsup * 1e-3; // 仮定値 (Fortran側でd1+d2に相当するか要確認)
-        double lg_m = lg * 1e-3;
-
-        double Lg1 = rho *  0.5 * lis / min_area_m2;
-        double Rk1 = beta * rho / ( min_area_m2 * min_area_m2); // Bernoulli (係数調整)
-
-        double Rv1 = 12.0 * mu * lis * lg_m * lg_m / pow(min_area_m2, 3.0);
-
-        // 駆動圧: 声門直下(Pu[last]) - 声道入口(Pd[0])
-        double Ug_old = previousUg; 
-        double Ug_guess = currentUg; 
-
-        // Newton-Raphson
-        for(int k=0; k<100; ++k) { // ループ回数Fortranは100
-            // F(Ug)
-            double F = Rk1 * std::abs(Ug_guess) * Ug_guess
-                    + Rv1 * Ug_guess
-                    + (Lg1 + La + Lu) * (Ug_guess - Ug_old) / dt
-                    + (dt / Ca) * Pu[Nsecg+1]
-                    - (dt / Cu) * Pu[Nsecg];
-            
-            // F'(Ug)
-            double Fd =  2.0 * Rk1 * std::abs(Ug_guess) + Rv1 + (Lg1 + La + Lu) / dt;
-            
-            if(std::abs(F) < 1e-9) break;
-            Ug_guess -= F / Fd;
-        }
-        currentUg = Ug_guess;
-    } else {
-        currentUg = 0.0;
-    }
-
-    currentPg = dt / Cu * Pu[Nsecg];
-
-
-    // --- 3. 声道 (Vocal Tract) の更新 ---
-    // 圧力更新 Pd[0]...
-
-    if(!hasVocalTract ){
-        for (int i = 0; i < Nsecp; i++) {
-            Pd[i] = 0.0;     // 圧力ゼロ
-            Ud[i] = currentUg; // 流量はすべて Ug と同じ
-        }
-    }else{
-        Pd[0] += (dt / Ca) * (currentUg - Ud[0]);
-        for(int i=1; i<Nsecp; ++i) {
-            Pd[i] += (dt / Ca) * (Ud[i-1] - Ud[i]);
-        }
-
-        // 流量更新 Ud[0]...
-        for(int i=0; i<Nsecp-1; ++i) {
-            Ud[i] += (dt / La) * (Pd[i] - Pd[i+1]);
-        }
-    }
-    
-    // 放射端 (Radiation)
-    // Lr * dUd/dt + Rr * Ud = Pd[last] - P_atm(0)
-    // 離散化: (Lr/dt + Rr) * Ud_new = Pd[last] + (Lr/dt)*Ud_old
-    double Z_rad = (La+Lr)/dt + Rr;
-    Ud[Nsecp-1] = (Pd[Nsecp-1] + ((La+Lr)/dt)*Ud[Nsecp-1]) / Z_rad;
-}
-#endif
-
 double ForceCalculator::findMinHarea() {
     double minimum = std::numeric_limits<double>::infinity();
     for (int i = 1; i + 1 < static_cast<int>(harea.size()); ++i) {
@@ -1870,104 +1583,6 @@ int ForceCalculator::findNsep(double minH) {
 }
 
 
-
-void ForceCalculator::outputForceVectors(int step) const {
-    std::ostringstream stepStr;
-    stepStr << std::setw(4) << std::setfill('0') << step;
-
-    const auto forceDir = outputDirectory_ / "force_vectors";
-    std::filesystem::create_directories(forceDir);
-    std::ofstream fout(forceDir / ("force_" + stepStr.str() + ".csv"));
-    fout << "x,y,z,Fx,Fy,Fz\n";  // CSVヘッダー
-
-    for (int i = 1; i < geomR.nxsup - 1; ++i) {
-        for (int j = 1; j < geomR.nsurfz - 1; ++j) {
-            int pid = geomR.surfp[i][j];
-            if (pid < 0) continue;
-
-            const auto &p = geomR.points[pid];
-            fout << p.x << "," << p.y << "," << p.z << ","
-                 << fxL[i][j] << "," << fyL[i][j] << "," << fzL[i][j] << "\n";
-        }
-    }
-
-    //std::cout << "[Output] force vectors written for step " << step << std::endl;
-}
-
-void ForceCalculator::outputCorrespondenceOffsets(int step) const {
-    const auto offsetDir = outputDirectory_ / "pair_offset";
-    std::filesystem::create_directories(offsetDir);
-
-    // ===== 見たい対応点を指定 =====
-    // 必要に応じて固定値に変えてください
-    const int i_target = std::min(geomL.nxsup, geomR.nxsup) / 2;
-    const int j_target = std::min(geomL.nsurfz, geomR.nsurfz) / 2;
-
-    const int ni = std::min(geomL.nxsup, geomR.nxsup);
-    const int nj = std::min(geomL.nsurfz, geomR.nsurfz);
-
-    if (i_target < 0 || i_target >= ni || j_target < 0 || j_target >= nj) return;
-
-    const int pidL = geomL.surfp[i_target][j_target];
-    const int pidR = geomR.surfp[i_target][j_target];
-
-    if (pidL < 0 || pidR < 0) return;
-
-    // ===== 初期座標 =====
-    const auto& pL0 = geomL.points[pidL];
-    const auto& pR0 = geomR.points[pidR];
-
-    // ===== 現在座標（変形後）=====
-    const auto& pL = stateL.disp[pidL];
-    const auto& pR = stateR.disp[pidR];
-
-    // ===== 予測座標（接触判定で使っている値も見たいとき）=====
-    const auto& pLf = stateL.predictedDisp[pidL];
-    const auto& pRf = stateR.predictedDisp[pidR];
-
-    // ===== 左右それぞれの変位量（本命）=====
-    const double xDispL = pL.ux - pL0.x;
-    const double zDispL = pL.uz - pL0.z;
-    const double xDispR = pR.ux - pR0.x;
-    const double zDispR = pR.uz - pR0.z;
-
-    // ===== 参考：予測変位 =====
-    const double xPredDispL = pLf.ux - pL0.x;
-    const double zPredDispL = pLf.uz - pL0.z;
-    const double xPredDispR = pRf.ux - pR0.x;
-    const double zPredDispR = pRf.uz - pR0.z;
-
-    // ===== 相対ズレ =====
-    const double dxPair = pR.ux - pL.ux;
-    const double dzPair = pR.uz - pL.uz;
-
-    // ===== 接触判定用ギャップ =====
-    const double gapY = pR.uy - pL.uy;
-
-    // ===== CSV出力（時系列）=====
-    std::ofstream fout(offsetDir / "monitor_point.csv", std::ios::app);
-
-    // ヘッダ（初回のみ）
-    if (fout.tellp() == 0) {
-        fout << "step,time,"
-             << "xDispL,zDispL,xDispR,zDispR,"
-             << "xPredDispL,zPredDispL,xPredDispR,zPredDispR,"
-             << "dxPair,dzPair,gapY\n";
-    }
-
-    // 時刻計算（dtを使う）
-    double t = step * sp.dt;
-
-    fout << step << "," << t << ","
-         << xDispL << "," << zDispL << ","
-         << xDispR << "," << zDispR << ","
-         << xPredDispL << "," << zPredDispL << ","
-         << xPredDispR << "," << zPredDispR << ","
-         << dxPair << "," << dzPair << ","
-         << gapY << "\n";
-
-    fout.close();
-}
 
     
 void ForceCalculator::resetPreviousContactForce() {

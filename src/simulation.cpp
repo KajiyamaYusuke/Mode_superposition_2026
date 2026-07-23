@@ -10,23 +10,12 @@
 #include <iomanip>
 #include <sstream>
 #include <vector>
-#include <array>
 #include <string>
 #include <limits>
 #include <filesystem>
 
 
 
-
-void writeTraceVTK(const std::vector<std::array<double,3>>& trace,
-                   const std::string& filename);
-void writePointVTK(double xL, double yL, double zL,
-                   double xR, double yR, double zR,
-                   int step);
-void writeLineVTK(
-    const std::vector<std::array<double,3>>& pts0,
-    const std::vector<std::array<double,3>>& pts1,
-    int step);
 
 Simulation::Simulation()
     : fCalc(geomL, geomR, mdataL, mdataR, stateL, stateR, params)
@@ -67,19 +56,17 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "iforce = " << params.iforce << "\n"
              << "contact_reference_frequency_hz = " << params.contactReferenceFrequencyHz << "\n"
              << "flow_blend_length_mm = " << params.flowBlendLengthMm << "\n"
-             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b2c3.vtu\n"
-             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b10c3.vtu\n"
-             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b2c3.txt\n"
-             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b10c3.txt\n"
+             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b2c2.vtu\n"
+             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b10c2.vtu\n"
+             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b2c2.txt\n"
+             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b10c2.txt\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
     fCalc.setOutputDirectory(runDir);
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b2c3.vtu");
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b2c2.vtu");
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
-    geomL.surfArea();
-
     geomL.surfArea();
     geomL.print();
     geomL.jtypes[5] = 3;   // 三角形
@@ -89,16 +76,14 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b2c3.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b2c3.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b2c2.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b2c2.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b10c3.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b10c2.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
-    geomR.surfArea();
-
     geomR.surfArea();
 
     geomR.jtypes[5] = 3;   // 三角形
@@ -108,8 +93,8 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b10c3.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b10c3.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b10c2.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b10c2.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -175,7 +160,6 @@ void Simulation::run() {
     stateR.qfdot.resize(mdataR.nModes, 0.0);
     stateR.qfddot.resize(mdataR.nModes, 0.0);
 
-    double P = 1;
     int num = 0;
 
     std::ofstream fa(runDir / "area.dat");
@@ -335,13 +319,6 @@ void Simulation::run() {
     stateL.uf2u(); 
     stateR.mode2uf(geomR, mdataR, 0); 
     stateR.uf2u();
-
-    fCalc.traceL.clear();
-    fCalc.traceR.clear();
-    fCalc.traceL.push_back({stateL.disp[nearestIdxL].ux, stateL.disp[nearestIdxL].uy, stateL.disp[nearestIdxL].uz});
-    fCalc.traceR.push_back({stateR.disp[nearestIdxR].ux, stateR.disp[nearestIdxR].uy, stateR.disp[nearestIdxR].uz});
-
-    
 
     std::vector<double> soundSignal;
         soundSignal.reserve(params.nstep);
@@ -692,26 +669,11 @@ void Simulation::run() {
         // 状態の確定
         stateL.uf2u();
         stateR.uf2u();
-        // fCalc.traceL.push_back({stateL.disp[nearestIdxL].ux, stateL.disp[nearestIdxL].uy, stateL.disp[nearestIdxL].uz});
-        // fCalc.traceR.push_back({stateR.disp[nearestIdxR].ux, stateR.disp[nearestIdxR].uy, stateR.disp[nearestIdxR].uz});
-
-{        auto t0 = now();
+        auto t0 = now();
 
         // 3Dモデル出力
         if (n % 20 == 0) {
-            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
-            //writeLineVTK(fCalc.lineStartL, fCalc.lineEndL, num);
-            //std::cout << n << "\n";
-            //fCalc.outputForceVectors(n);
-            // writePointVTK(
-            //     stateL.disp[nearestIdxL].ux,
-            //     stateL.disp[nearestIdxL].uy,
-            //     stateL.disp[nearestIdxL].uz,
-            //     stateR.disp[nearestIdxR].ux,
-            //     stateR.disp[nearestIdxR].uy,
-            //     stateR.disp[nearestIdxR].uz,
-            //     num
-            // );
+            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             num++;
         }
 
@@ -719,11 +681,9 @@ void Simulation::run() {
         // other scalar outputs above.
         soundSignal.push_back(fCalc.outletPressure());
         auto t1 = now();
-        time_output += elapsed_ms(t0, t1);}
+        time_output += elapsed_ms(t0, t1);
 
     }
-    //writeTraceVTK(fCalc.traceL, "../output/traceL.vtk");
-    //writeTraceVTK(fCalc.traceR, "../output/traceR.vtk");
     WavWriter::save(soundSignal, params.dt, (runDir / "test_sound.wav").string());
     
     std::cout << "\n=== Timing Summary ===\n";
@@ -751,68 +711,6 @@ void Simulation::run() {
 
     std::cout << "[Simulation] Run complete." << std::endl;
 } 
-
-void Simulation::writeVTK(int step, const Geometry& geom, const State& state, const std::string& rdir, int nwrite) {
-    // ファイル名
-    std::ostringstream num;
-    num << std::setw(4) << std::setfill('0') << step;
-    std::string filename = rdir + "/deform" + num.str() + ".vtu";
-
-    std::ofstream fout(filename);
-    if (!fout) {
-        std::cerr << "Error: cannot open " << filename << std::endl;
-        return;
-    }
-
-    std::cout << "step: " << step * nwrite << std::endl;
-    std::cout << "output: " << filename << std::endl;   
-
-    fout << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
-    fout << "  <UnstructuredGrid>\n";
-    fout << "    <Piece NumberOfPoints=\"" << geom.nPoints 
-         << "\" NumberOfCells=\"" << geom.nCells << "\">\n";
-
-    // Points
-    fout << "      <Points>\n";
-    fout << "        <DataArray type=\"Float64\" Name=\"Points\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-    for (int i = 0; i < geom.nPoints; i++) {
-        fout << std::scientific << std::setprecision(6)
-             << state.disp[i].ux << " " << state.disp[i].uy << " " << state.disp[i].uz << "\n";
-    }
-    fout << "        </DataArray>\n";
-    fout << "      </Points>\n";
-
-    // Cells
-    fout << "      <Cells>\n";
-    fout << "        <DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
-    for (int i = 0; i < geom.nCells; i++) {
-        int nverts = geom.jtypes[geom.types[i]];
-        for (int j = 0; j < nverts; j++) {
-            fout << geom.connect[i][j] << " ";
-        }
-        fout << "\n";
-    }
-    fout << "        </DataArray>\n";
-
-    fout << "        <DataArray type=\"Int64\" Name=\"offsets\" format=\"ascii\">\n";
-    for (int i = 0; i < geom.nCells; i++) {
-        fout << geom.offsets[i] << "\n";
-    }
-    fout << "        </DataArray>\n";
-
-    fout << "        <DataArray type=\"Int64\" Name=\"types\" format=\"ascii\">\n";
-    for (int i = 0; i < geom.nCells; i++) {
-        fout << geom.types[i] << "\n";
-    }
-    fout << "        </DataArray>\n";
-    fout << "      </Cells>\n";
-
-    fout << "    </Piece>\n";
-    fout << "  </UnstructuredGrid>\n";
-    fout << "</VTKFile>\n";
-
-    fout.close();
-}
 
 void Simulation::writeVTKCombined(int step, const Geometry& geomL, const State& stateL, 
                                   const Geometry& geomR, const State& stateR, 
@@ -914,122 +812,6 @@ void Simulation::writeVTKCombined(int step, const Geometry& geomL, const State& 
     fout << "    </Piece>\n";
     fout << "  </UnstructuredGrid>\n";
     fout << "</VTKFile>\n";
-
-    fout.close();
-}
-
-void writeTraceVTK(const std::vector<std::array<double,3>>& trace,
-                   const std::string& filename)
-{
-    std::ofstream fout(filename);
-
-    int n = trace.size();
-
-    fout << "# vtk DataFile Version 3.0\n";
-    fout << "Trace\n";
-    fout << "ASCII\n";
-    fout << "DATASET POLYDATA\n";
-
-    // 頂点
-    fout << "POINTS " << n << " float\n";
-    for (auto& p : trace) {
-        fout << p[0] << " " << p[1] << " " << p[2] << "\n";
-    }
-
-    if (n >= 2) {
-        fout << "LINES 1 " << n + 1 << "\n";
-        fout << n << " ";
-        for (int i = 0; i < n; ++i) fout << i << " ";
-        fout << "\n";
-    } else if (n == 1) {
-        fout << "VERTICES 1 2\n";
-        fout << "1 0\n";
-    } else {
-        fout << "LINES 0 0\n";
-    }
-
-    fout.close();
-}
-
-void writePointVTK(double xL, double yL, double zL,
-                   double xR, double yR, double zR,
-                   int step)
-{
-    // ファイル名
-    std::ostringstream oss;
-    oss << "../result/point_" << std::setw(4)
-        << std::setfill('0') << step << ".vtk";
-
-    std::ofstream fout(oss.str());
-
-    // ===== ヘッダ =====
-    fout << "# vtk DataFile Version 3.0\n";
-    fout << "Two Points\n";
-    fout << "ASCII\n";
-    fout << "DATASET POLYDATA\n";
-
-    // ===== 点データ（左右2点）=====
-    fout << "POINTS 2 double\n";
-    fout << std::scientific << std::setprecision(15);
-    fout << xL << " " << yL << " " << zL << "\n";
-    fout << xR << " " << yR << " " << zR << "\n";
-
-    // ===== VERTICES（これが重要）=====
-    // 2つの点、それぞれ独立した頂点
-    fout << "VERTICES 2 4\n";
-    fout << "1 0\n";
-    fout << "1 1\n";
-
-    // ===== （任意）ラベル用データ =====
-    fout << "POINT_DATA 2\n";
-    fout << "SCALARS point_id int 1\n";
-    fout << "LOOKUP_TABLE default\n";
-    fout << "0\n"; // 左
-    fout << "1\n"; // 右
-
-    fout.close();
-}
-
-void writeLineVTK(
-    const std::vector<std::array<double,3>>& pts0,
-    const std::vector<std::array<double,3>>& pts1,
-    int step)
-{
-    // pts0[i] → 始点
-    // pts1[i] → 終点（同じiで1本の線）
-
-    std::ostringstream oss;
-    oss << "../result/contact_" 
-        << std::setw(4) << std::setfill('0') << step 
-        << ".vtk";
-
-    std::ofstream fout(oss.str());
-
-    int nLines = pts0.size();
-    int nPoints = nLines * 2;
-
-    fout << "# vtk DataFile Version 3.0\n";
-    fout << "Contact lines\n";
-    fout << "ASCII\n";
-    fout << "DATASET POLYDATA\n";
-
-    // ===== POINTS =====
-    fout << "POINTS " << nPoints << " double\n";
-    fout << std::scientific << std::setprecision(15);
-
-    for (int i = 0; i < nLines; ++i) {
-        fout << pts0[i][0] << " " << pts0[i][1] << " " << pts0[i][2] << "\n";
-        fout << pts1[i][0] << " " << pts1[i][1] << " " << pts1[i][2] << "\n";
-    }
-
-    // ===== LINES =====
-    fout << "LINES " << nLines << " " << nLines * 3 << "\n";
-
-    int idx = 0;
-    for (int i = 0; i < nLines; ++i) {
-        fout << "2 " << idx << " " << idx + 1 << "\n";
-        idx += 2;
-    }
 
     fout.close();
 }
