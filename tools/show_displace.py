@@ -22,26 +22,27 @@ output_interval = 5
 dt = sim_dt * output_interval
 fs = 1.0 / dt
 t_start = 0.05
-t_end   = 0.15
+t_end   = 0.5
 flow_plot_start = 0.05
 flow_plot_end = 0.1
-pressure_val = 1700
+pressure_val = 1300
 
 def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r):
-    fig, ax = plt.subplots(figsize=(8, 3), dpi=150)
+    fig, ax = plt.subplots(figsize=(12, 4), dpi=300)
 
     ax.plot(steady_time, steady_x1l, label='Left VF', color='#0072B2', linewidth=1.2)
     ax.plot(steady_time, steady_x1r, label='Right VF', color='#D55E00', linewidth=1.2, linestyle='--')
-    ax.set_title(f"Vocal Fold Displacement (Ps = {pressure_val} Pa)", fontsize=16)
-    ax.set_xlabel("Time [s]", fontsize=18)
-    ax.set_ylabel("Displacement", fontsize=18)
-    ax.tick_params(direction='in')
-    ax.legend(loc='upper right', fontsize=16)
+    #ax.set_title(f"Vocal Fold Displacement (Ps = {pressure_val} Pa)", fontsize=16)
+    ax.set_xlabel("Time [s]", fontsize=26)
+    ax.set_ylabel("Displacement [mm]", fontsize=26)
+    ax.tick_params(direction='in', labelsize=20)
+    ax.set_ylim(-0.85, 3.3)
+    ax.legend(loc='upper right', fontsize=18)
     ax.grid(True, linestyle='--', alpha=0.5)
 
     plt.tight_layout()
 
-    save_filename = f"../output/displacement_newWaveform_Ps_{pressure_val}Pa.png"
+    save_filename = f"../output/displacement__Ps_{pressure_val}Pa.png"
     plt.savefig(save_filename, dpi=300)
     plt.close()
     print(f"[出力完了] 声帯変位波形を保存しました: {save_filename}")

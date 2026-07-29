@@ -6,6 +6,7 @@ output/
 output2/
 output_force/
 result/
+analysis_runs/
 input/
 
 # 一時ファイル
@@ -16,6 +17,8 @@ input/
 *.csv
 *.png
 *.txt
+!requirements-analysis.txt
+__pycache__/
 
 # VSCode 設定
 .vscode/

@@ -16,7 +16,7 @@ OUTPUT_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/airflow_vt.dat
 DISP_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/displace.dat"  # ★追加：変位データ
 
 # スイープする圧力のリスト (Pa)
-pressure_list = [600, 700, 800, 900, 1000, 1100, 1200, 1300]
+pressure_list = [1300]
 
 # 解析設定
 sim_dt = 1.0e-5
@@ -24,7 +24,7 @@ output_interval = 5
 dt = sim_dt * output_interval
 fs = 1.0 / dt         
 t_start = 0.0 
-t_end   = 0.15        
+t_end   = 0.5        
 flow_plot_start = 0.05
 flow_plot_end = 0.1
 
@@ -157,9 +157,9 @@ def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r
 
     ax.plot(steady_time, steady_x1l, label='Left VF', color='#0072B2', linewidth=1.2)
     ax.plot(steady_time, steady_x1r, label='Right VF', color='#D55E00', linewidth=1.2, linestyle='--')
-    ax.set_title(f"Vocal Fold Displacement (Ps = {pressure_val} Pa)", fontsize=16)
+    #ax.set_title(f"Vocal Fold Displacement (Ps = {pressure_val} Pa)", fontsize=16)
     ax.set_xlabel("Time [s]", fontsize=18)
-    ax.set_ylabel("Displacement", fontsize=18)
+    ax.set_ylabel("Displacement [mm]", fontsize=18)
     ax.set_ylim(-0.85, 3.3)
     ax.tick_params(direction='in')
     ax.legend(loc='upper right', fontsize=16)

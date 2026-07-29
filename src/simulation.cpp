@@ -56,16 +56,16 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "iforce = " << params.iforce << "\n"
              << "contact_reference_frequency_hz = " << params.contactReferenceFrequencyHz << "\n"
              << "flow_blend_length_mm = " << params.flowBlendLengthMm << "\n"
-             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b8c3.vtu\n"
-             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b8c3.vtu\n"
-             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b8c3.txt\n"
-             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b8c3.txt\n"
+             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b12c2.vtu\n"
+             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b12c2.vtu\n"
+             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b12c2.txt\n"
+             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b12c2.txt\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
     fCalc.setOutputDirectory(runDir);
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
+    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b12c3.vtu");
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
     geomL.print();
@@ -76,13 +76,13 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
+    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b12c3.vtu", geomL);
+    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b12c3.txt");
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b8c3.vtu");
+    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b2c2.vtu");
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
@@ -93,8 +93,8 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b8c3.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b8c3.txt");
+    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b2c2.vtu", geomR);
+    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b2c2.txt");
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -218,7 +218,7 @@ void Simulation::run() {
                    << "dominant_surface_mode,dominant_surface_rms_mm\n";
 
 
-    const double monitorTargetX = 7.2;
+    const double monitorTargetX = 9.2;
     const double monitorTargetZ = 8.5;
     double minDist2 = 1e100;
     int nearestIdxL = -1;
@@ -608,70 +608,6 @@ void Simulation::run() {
         } else {
             steps_reached_ncont++;
         }
-
-
-        // {   //[DEBUG]
-        //     auto [minA, maxA, idxMinA, idxMaxA] = minMaxIndex(fCalc.harea);
-        //     auto [maxFiL, imaxFiL] = maxAbsIndex(fCalc.fiL);
-        //     auto [maxFiR, imaxFiR] = maxAbsIndex(fCalc.fiR);
-        //     double maxQL  = maxAbsVector(stateL.qf);
-        //     double maxQdL = maxAbsVector(stateL.qfdot);
-        //     double maxQaL = maxAbsVector(stateL.qfddot);
-        //     double maxQR  = maxAbsVector(stateR.qf);
-        //     double maxQdR = maxAbsVector(stateR.qfdot);
-        //     double maxQaR = maxAbsVector(stateR.qfddot);
-        //     double maxPredDispL = maxAbsNodeDisp(geomL, stateL);
-        //     double maxPredDispR = maxAbsNodeDisp(geomR, stateR);
-        //     bool diverged =
-        //         !std::isfinite(minA) ||
-        //         !std::isfinite(maxA) ||
-        //         !std::isfinite(fCalc.currentUg) ||
-        //         !std::isfinite(fCalc.currentPg) ||
-        //         !std::isfinite(maxAbsPsurf()) ||
-        //         !std::isfinite(maxFiL) ||
-        //         !std::isfinite(maxFiR) ||
-        //         !std::isfinite(maxQL) ||
-        //         !std::isfinite(maxQdL) ||
-        //         !std::isfinite(maxQaL) ||
-        //         !std::isfinite(maxQR) ||
-        //         !std::isfinite(maxQdR) ||
-        //         !std::isfinite(maxQaR) ||
-        //         !std::isfinite(maxPredDispL) ||
-        //         !std::isfinite(maxPredDispR);
-        //     if (n % 10 == 0 || t > 0.12 || diverged) {
-        //         fstepdbg << std::scientific << std::setprecision(12)
-        //                 << n << "," << t << ","
-        //                 << minA << "," << maxA << "," << idxMinA << ","
-        //                 << fCalc.currentUg << "," << fCalc.currentPg << ","
-        //                 << (fCalc.Pd.size() > 0 ? fCalc.Pd[0] : 0.0) << ","
-        //                 << (fCalc.Pd.size() > 9 ? fCalc.Pd[9] : 0.0) << ","
-        //                 << maxAbsPsurf() << ","
-        //                 << maxFiL << "," << imaxFiL << ","
-        //                 << maxFiR << "," << imaxFiR << ","
-        //                 << maxQL << "," << maxQdL << "," << maxQaL << ","
-        //                 << maxQR << "," << maxQdR << "," << maxQaR << ","
-        //                 << maxPredDispL << "," << maxPredDispR << ","
-        //                 << icont_used_this_step << ","
-        //                 << fCalc.contactFlag << ","
-        //                 << fCalc.max_force_diff << ","
-        //                 << diverged
-        //                 << "\n";
-        //     }
-        //     if (diverged) {
-        //         std::cerr << "[DIVERGED] step=" << n
-        //                 << " t=" << t
-        //                 << " minA=" << minA
-        //                 << " idxMinA=" << idxMinA
-        //                 << " Ug=" << fCalc.currentUg
-        //                 << " Pg=" << fCalc.currentPg
-        //                 << " maxFiL=" << maxFiL
-        //                 << " maxFiR=" << maxFiR
-        //                 << " maxQL=" << maxQL
-        //                 << " maxQR=" << maxQR
-        //                 << std::endl;
-        //         break;
-        //     }
-        // }
     
         // 状態の確定
         stateL.uf2u();
@@ -679,8 +615,8 @@ void Simulation::run() {
         auto t0 = now();
 
         // 3Dモデル出力
-        if (n % 20 == 0) {
-            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
+        if (n % 20 == 0 && params.nstep-n <= 5000) {
+            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             num++;
         }
 

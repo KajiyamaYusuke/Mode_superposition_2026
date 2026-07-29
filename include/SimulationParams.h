@@ -47,10 +47,10 @@ struct SimulationParams {
     int    forceDirection = 0;
     // Temporary fixed reference for the legacy reduced contact coefficients.
     // It deliberately does not follow the participating structural modes.
-    double contactReferenceFrequencyHz = 35.0;
+    double contactReferenceFrequencyHz = 40.0;
     // Physical distance over which wall pressure blends after separation.
     double flowBlendLengthMm = 0.5;
-    double ps      = 101325.0; // 静圧 [Pa]
+    double ps      = 1325.0; // 静圧 [Pa]
     double rho     = 1.225;    // 密度 [kg/m^3] (空気の初期値)
     double mu      = 1.81e-5;  // 動粘性係数 [Pa·s]（参考値）
     double c_sound = 340.0;
@@ -61,7 +61,7 @@ struct SimulationParams {
 
     double L_sub   = 0.15;  // 声門下管の長さ [m]
     double r_sub   = 0.0125;// 声門下管の半径 [m] (2.5cm / 2)
-    int    N_sub   = 3;     // 声門下管のセクション数 (Nsecgに対応)
+    int    N_sub   = 10;     // 声門下管のセクション数 (Nsecgに対応)
 
     double L_vt    = 17.5 * 1e-2;   // 声道の長さ [m]
     double r_vt    = 1.25 * 1e-2;   // 声道の断面積 [m^2]

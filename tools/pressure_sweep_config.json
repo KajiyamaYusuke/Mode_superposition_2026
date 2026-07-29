@@ -1,0 +1,21 @@
+{
+  "executable": "build/simulation",
+  "base_param_file": "input/param.txt",
+  "working_directory": "build",
+  "archive_root": "analysis_runs",
+  "pressure": {
+    "start_pa": 500,
+    "stop_pa": 3000,
+    "step_pa": 100
+  },
+  "analysis": {
+    "start_time_s": 0.15,
+    "end_time_s": null,
+    "last_cycles": 50
+  },
+  "environment": {
+    "OMP_NUM_THREADS": "4",
+    "OMP_PROC_BIND": "close",
+    "OMP_PLACES": "cores"
+  }
+}
