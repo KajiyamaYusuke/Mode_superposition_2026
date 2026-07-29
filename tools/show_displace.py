@@ -10,10 +10,10 @@ plt.style.use(['science', 'ieee', 'no-latex'])
 # =========================
 # ユーザー設定環境
 # =========================
-EXECUTABLE = "/home/kajiyama/code/Mode_superposition_2026/build/simulation"  
-PARAM_FILE = "/home/kajiyama/code/Mode_superposition_2026/input/param.txt"     
-OUTPUT_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/airflow_vt.dat"  
-DISP_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/displace.dat"  # ★追加：変位データ
+EXECUTABLE = "../build/simulation"  
+PARAM_FILE = "../input/param.txt"     
+OUTPUT_DATA = "../output/airflow_vt.dat"  
+DISP_DATA = "../output/displace.dat"  # ★追加：変位データ
 
 
 # 解析設定
@@ -25,7 +25,7 @@ t_start = 0.05
 t_end   = 0.5
 flow_plot_start = 0.05
 flow_plot_end = 0.1
-pressure_val = 1300
+pressure_val = 500
 
 def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r):
     fig, ax = plt.subplots(figsize=(12, 4), dpi=300)
@@ -36,13 +36,13 @@ def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r
     ax.set_xlabel("Time [s]", fontsize=26)
     ax.set_ylabel("Displacement [mm]", fontsize=26)
     ax.tick_params(direction='in', labelsize=20)
-    ax.set_ylim(-0.85, 3.3)
+    #ax.set_ylim(-0.85, 3.3)
     ax.legend(loc='upper right', fontsize=18)
     ax.grid(True, linestyle='--', alpha=0.5)
 
     plt.tight_layout()
 
-    save_filename = f"../output/displacement__Ps_{pressure_val}Pa.png"
+    save_filename = f"../output/displacement_Ps_{pressure_val}Pa.png"
     plt.savefig(save_filename, dpi=300)
     plt.close()
     print(f"[出力完了] 声帯変位波形を保存しました: {save_filename}")
@@ -85,7 +85,7 @@ Sxx_linear = np.sqrt(Sxx)
 max_Sxx = np.max(Sxx_linear) if np.max(Sxx_linear) > 0 else 1.0
 Sxx_db = 20 * np.log10(Sxx_linear / max_Sxx + 1e-12)
 
-zoom_start = max(0, len(valid_time) - int(0.05 / dt)) # 最後の0.05秒間で解析
+zoom_start = max(0, len(valid_time) - int(0.15 / dt)) # 最後の0.05秒間で解析
 steady_time = valid_time[zoom_start:]
 steady_flow = valid_flow[zoom_start:]
 steady_x1l  = valid_x1l[zoom_start:]
