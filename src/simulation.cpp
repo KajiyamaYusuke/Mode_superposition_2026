@@ -56,10 +56,10 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "iforce = " << params.iforce << "\n"
              << "contact_reference_frequency_hz = " << params.contactReferenceFrequencyHz << "\n"
              << "flow_blend_length_mm = " << params.flowBlendLengthMm << "\n"
-             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b12c2.vtu\n"
-             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b12c2.vtu\n"
-             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b12c2.txt\n"
-             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b12c2.txt\n"
+             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b12c3.vtu\n"
+             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b12c3.vtu\n"
+             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b12c3.txt\n"
+             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b12c3.txt\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
     fCalc.setOutputDirectory(runDir);
@@ -616,7 +616,7 @@ void Simulation::run() {
 
         // 3Dモデル出力
         if (n % 20 == 0 && params.nstep-n <= 5000) {
-            writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
+            //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 20);
             num++;
         }
 

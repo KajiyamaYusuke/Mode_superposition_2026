@@ -4,7 +4,7 @@
 # number of points along z-axis(nsurfz)
 18
 # number of step nstep
-50000
+20000
 # output interval nwrite
 20
 # time step for time integration dt
@@ -14,7 +14,7 @@
 # damping coefficient zetaR
 0.05
 # contact coefficients kc1 , kc2 and kc3(Pa / m*rad)
-5    1e3   3e3
+5    1e3   1e3
 # max iteration for contact calculation
 100
 # filename for eigenmode frequencies
@@ -30,7 +30,7 @@ result
 # kind of external force (iforce)
 0
 # subglottal pressure Ps (Pa)
-1300
+500
 # air density (kg/m3)
 1.13
 # air viscousity (Pa s)
