@@ -10,13 +10,13 @@ plt.style.use(['science', 'ieee', 'no-latex'])
 # =========================
 # ユーザー設定環境
 # =========================
-EXECUTABLE = "/home/kajiyama/code/Mode_superposition_2026/build/simulation"  
-PARAM_FILE = "/home/kajiyama/code/Mode_superposition_2026/input/param.txt"     
-OUTPUT_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/airflow_vt.dat"  
-DISP_DATA = "/home/kajiyama/code/Mode_superposition_2026/output/displace.dat"  # ★追加：変位データ
+EXECUTABLE = "/home/kajiyama/code/simulation-main/build/simulation"
+PARAM_FILE = "/home/kajiyama/code/simulation-main/input/param.txt"
+OUTPUT_DATA = "/home/kajiyama/code/simulation-main/output/airflow_vt.dat"
+DISP_DATA = "/home/kajiyama/code/simulation-main/output/displace.dat"  # ★追加：変位データ
 
 # スイープする圧力のリスト (Pa)
-pressure_list = [1300]
+pressure_list = [500, 700, 900, 1100, 1300, 1500]
 
 # 解析設定
 sim_dt = 1.0e-5
@@ -27,6 +27,13 @@ t_start = 0.0
 t_end   = 0.5        
 flow_plot_start = 0.05
 flow_plot_end = 0.1
+
+M3_PER_S_TO_L_PER_S = 1000.0
+
+
+def flow_m3s_to_ls(flow_m3s):
+    """Convert volumetric flow from m^3/s (solver output) to L/s."""
+    return np.asarray(flow_m3s) * M3_PER_S_TO_L_PER_S
 
 # =========================
 # 関数: paramファイルの圧力書き換え
@@ -47,7 +54,7 @@ def update_param_file(filepath, new_pressure):
 def save_flow_waveform(pressure_val):
     data_flow = np.loadtxt(OUTPUT_DATA, comments='#')
     time = data_flow[:, 0] * sim_dt
-    flow = data_flow[:, 1]
+    flow = flow_m3s_to_ls(data_flow[:, 1])
 
     mask = (time >= flow_plot_start) & (time <= flow_plot_end)
     if not np.any(mask):
@@ -60,7 +67,7 @@ def save_flow_waveform(pressure_val):
     fig, ax = plt.subplots(figsize=(7, 3), dpi=150)
     ax.plot(time[mask], flow[mask], color='black', linewidth=1.0)
     ax.set_xlabel("Time [s]", fontsize=14)
-    ax.set_ylabel("Airflow [l/s]", fontsize=14)
+    ax.set_ylabel("Airflow [L/s]", fontsize=14)
     ax.set_title(f"Airflow waveform (Ps = {pressure_val} Pa)", fontsize=15)
     ax.tick_params(direction='in')
     ax.grid(True, linestyle='--', alpha=0.5)
@@ -84,7 +91,7 @@ def analyze_and_plot(pressure_val):
     
     # 時間軸と各データの抽出
     time = np.arange(min_len) * dt
-    flow_data = data_flow[:min_len, 1]
+    flow_data = flow_m3s_to_ls(data_flow[:min_len, 1])
     
     # displace.datから変位を取得 (1列目=L, 2列目=R)
     # 左声帯は符号が右声帯と逆なので、重ねて比較しやすいように反転する
@@ -129,7 +136,7 @@ def analyze_and_plot(pressure_val):
     # 上段: 気流波形
     ax1.plot(steady_time, steady_flow, color='black', linewidth=1.0)
     ax1.set_title(f"Airflow and Spectrogram (Ps = {pressure_val} Pa)", fontsize=16)
-    ax1.set_ylabel("Flow/Pressure", fontsize=14)
+    ax1.set_ylabel("Airflow [L/s]", fontsize=14)
     ax1.tick_params(direction='in')
     ax1.grid(True, linestyle='--', alpha=0.5)
     
@@ -160,7 +167,7 @@ def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r
     #ax.set_title(f"Vocal Fold Displacement (Ps = {pressure_val} Pa)", fontsize=16)
     ax.set_xlabel("Time [s]", fontsize=18)
     ax.set_ylabel("Displacement [mm]", fontsize=18)
-    ax.set_ylim(-0.85, 3.3)
+    # ax.set_ylim(-0.85, 3.3)
     ax.tick_params(direction='in')
     ax.legend(loc='upper right', fontsize=16)
     ax.grid(True, linestyle='--', alpha=0.5)

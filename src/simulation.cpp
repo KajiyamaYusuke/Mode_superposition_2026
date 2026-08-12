@@ -13,6 +13,7 @@
 #include <string>
 #include <limits>
 #include <filesystem>
+#include <utility>
 
 
 
@@ -38,11 +39,15 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     // Keep the normal output path stable: the analysis scripts in tools/
     // intentionally consume output/*.dat without selecting a run directory.
-    // This is a latest-result workspace and is overwritten at each execution;
+    // This is a latest-result workspace and is overwritten at each executionh;
     // archival copies are an explicit user action rather than an unbounded
     // accumulation of heavy simulation output.
     const fs::path absoluteParameterFile = fs::absolute(parameterFile);
     const fs::path projectRoot = absoluteParameterFile.parent_path().parent_path();
+    const fs::path leftModeFile = "../input/M5_test/M5_mode_T3_b10c3.vtu";
+    const fs::path rightModeFile = "../input/M5_test/M5_mode_T3_b10c3.vtu";
+    const fs::path leftFrequencyFile = "../input/M5_test/M5_freq_T3_d2_b10c3.txt";
+    const fs::path rightFrequencyFile = "../input/M5_test/M5_freq_T3_d2_b10c3.txt";
     runDir = projectRoot / "output";
     fs::create_directories(runDir);
     fs::copy_file(absoluteParameterFile, runDir / "params_used.txt",
@@ -56,16 +61,16 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "iforce = " << params.iforce << "\n"
              << "contact_reference_frequency_hz = " << params.contactReferenceFrequencyHz << "\n"
              << "flow_blend_length_mm = " << params.flowBlendLengthMm << "\n"
-             << "left_mode_vtu = ../input/M5_test/M5_mode_T3_b12c3.vtu\n"
-             << "right_mode_vtu = ../input/M5_test/M5_mode_T3_b12c3.vtu\n"
-             << "left_frequency = ../input/M5_test/M5_freq_T3_d2_b12c3.txt\n"
-             << "right_frequency = ../input/M5_test/M5_freq_T3_d2_b12c3.txt\n"
+             << "left_mode_vtu = " << leftModeFile.string() << "\n"
+             << "right_mode_vtu = " << rightModeFile.string() << "\n"
+             << "left_frequency = " << leftFrequencyFile.string() << "\n"
+             << "right_frequency = " << rightFrequencyFile.string() << "\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
     fCalc.setOutputDirectory(runDir);
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
-    geomL.loadFromVTK("../input/M5_test/M5_mode_T3_b12c3.vtu");
+    geomL.loadFromVTK(leftModeFile.string());
     geomL.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomL.surfArea();
     geomL.print();
@@ -76,13 +81,13 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataL.initialize(params.nmode, geomL);
 
-    mdataL.loadFromVTU("../input/M5_test/M5_mode_T3_b12c3.vtu", geomL);
-    mdataL.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b12c3.txt");
+    mdataL.loadFromVTU(leftModeFile.string(), geomL);
+    mdataL.loadFreqDamping(leftFrequencyFile.string());
 
     mdataL.normalizeModes( params.mass, geomL);
     stateL.initialize(geomL.nPoints, params.nmode, params.nstep, geomL);
 
-    geomR.loadFromVTK("../input/M5_test/M5_mode_T3_b2c2.vtu");
+    geomR.loadFromVTK(rightModeFile.string());
     geomR.surfExtractFromNAS("../input/M5_test/M5_surface_T3_d2.nas",69,70);
     geomR.surfArea();
 
@@ -93,8 +98,8 @@ void Simulation::initialize(const fs::path& parameterFile) {
 
     mdataR.initialize(params.nmode, geomR);
 
-    mdataR.loadFromVTU("../input/M5_test/M5_mode_T3_b2c2.vtu", geomR);
-    mdataR.loadFreqDamping("../input/M5_test/M5_freq_T3_d2_b2c2.txt");
+    mdataR.loadFromVTU(rightModeFile.string(), geomR);
+    mdataR.loadFreqDamping(rightFrequencyFile.string());
 
     mdataR.normalizeModes( params.mass, geomR);
 
@@ -180,6 +185,8 @@ void Simulation::run() {
     std::ofstream fdispXY(runDir / "displace_xy.dat");
     std::ofstream fmodal(runDir / "modal_contribution.csv");
     std::ofstream fmodalDominant(runDir / "modal_dominant.csv");
+    std::ofstream fmodalTop10(runDir / "modal_top10.csv");
+    std::ofstream firregularity(runDir / "irregularity_timeseries.csv");
     //[DEBUG]
     std::ofstream fstepdbg(runDir / "debug_step_summary.csv");
     fstepdbg << "step,time,"
@@ -216,6 +223,15 @@ void Simulation::run() {
     fmodalDominant << "step,time_s,side,"
                    << "dominant_probe_uy_mode,dominant_probe_uy_mm,"
                    << "dominant_surface_mode,dominant_surface_rms_mm\n";
+    fmodalTop10
+        << "step,time_s,side,scope,rank,mode_index,frequency_hz,"
+        << "q,modal_norm_mm,magnitude_ratio,signed_projection_ratio,"
+        << "cumulative_magnitude_ratio,total_displacement_norm_mm,"
+        << "cancellation_factor\n";
+    firregularity
+        << "step,time_s,x_left_mm,x_right_mm,glottal_area_min_mm2,"
+        << "glottal_area_max_mm2,flow_rate_m3_s,outlet_pressure_pa,"
+        << "contact_flag\n";
 
 
     const double monitorTargetX = 9.2;
@@ -319,6 +335,175 @@ void Simulation::run() {
                        << step << "," << time << "," << side << ","
                        << dominantProbeMode << "," << dominantProbeMagnitude << ","
                        << dominantSurfaceMode << "," << dominantSurfaceMagnitude << "\n";
+    };
+
+    struct ModalContributionEntry {
+        int modeIndex = -1;
+        double frequencyHz = 0.0;
+        double q = 0.0;
+        double modalNormMm = 0.0;
+        double magnitudeRatio = 0.0;
+        double signedProjectionRatio = std::numeric_limits<double>::quiet_NaN();
+    };
+
+    auto writeTop10ModalContributions =
+        [&](int step, double time, const char* side,
+            const ModeData& modes, const State& state, int probeId) {
+        constexpr double normEpsMm2 = 1.0e-24;
+        constexpr double scalarEpsMm = 1.0e-12;
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const int modeCount = modes.nModes;
+        const auto& surfacePointIds = state.surfacePointIds;
+
+        std::vector<double> totalUx(surfacePointIds.size(), 0.0);
+        std::vector<double> totalUy(surfacePointIds.size(), 0.0);
+        std::vector<double> totalUz(surfacePointIds.size(), 0.0);
+        for (std::size_t s = 0; s < surfacePointIds.size(); ++s) {
+            const int pid = surfacePointIds[s];
+            for (int m = 0; m < modeCount; ++m) {
+                const double scaleMm = state.q[m] * 1.0e3;
+                const auto& phi = modes.modes[m][pid];
+                totalUx[s] += scaleMm * phi.ux;
+                totalUy[s] += scaleMm * phi.uy;
+                totalUz[s] += scaleMm * phi.uz;
+            }
+        }
+
+        std::vector<double> xyzNormSquared(modeCount, 0.0);
+        std::vector<double> xyzProjection(modeCount, 0.0);
+        std::vector<double> uyNormSquared(modeCount, 0.0);
+        std::vector<double> uyProjection(modeCount, 0.0);
+        double totalXyzNormSquared = 0.0;
+        double totalUyNormSquared = 0.0;
+        for (std::size_t s = 0; s < surfacePointIds.size(); ++s) {
+            totalXyzNormSquared += totalUx[s] * totalUx[s]
+                                 + totalUy[s] * totalUy[s]
+                                 + totalUz[s] * totalUz[s];
+            totalUyNormSquared += totalUy[s] * totalUy[s];
+
+            const int pid = surfacePointIds[s];
+            for (int m = 0; m < modeCount; ++m) {
+                const double scaleMm = state.q[m] * 1.0e3;
+                const auto& phi = modes.modes[m][pid];
+                const double ux = scaleMm * phi.ux;
+                const double uy = scaleMm * phi.uy;
+                const double uz = scaleMm * phi.uz;
+                xyzNormSquared[m] += ux * ux + uy * uy + uz * uz;
+                xyzProjection[m] += ux * totalUx[s]
+                                  + uy * totalUy[s]
+                                  + uz * totalUz[s];
+                uyNormSquared[m] += uy * uy;
+                uyProjection[m] += uy * totalUy[s];
+            }
+        }
+
+        auto makeEntries = [&](const std::vector<double>& normSquared,
+                               const std::vector<double>& projection,
+                               double totalNormSquared) {
+            std::vector<ModalContributionEntry> entries(modeCount);
+            double sumModalNorm = 0.0;
+            for (int m = 0; m < modeCount; ++m) {
+                entries[m].modeIndex = m;
+                entries[m].frequencyHz = modes.frequencies[m];
+                entries[m].q = state.q[m];
+                entries[m].modalNormMm = std::sqrt(normSquared[m]);
+                sumModalNorm += entries[m].modalNormMm;
+            }
+            for (int m = 0; m < modeCount; ++m) {
+                if (sumModalNorm > 0.0) {
+                    entries[m].magnitudeRatio =
+                        entries[m].modalNormMm / sumModalNorm;
+                }
+                if (totalNormSquared > normEpsMm2) {
+                    entries[m].signedProjectionRatio =
+                        projection[m] / totalNormSquared;
+                }
+            }
+            return std::make_pair(std::move(entries), sumModalNorm);
+        };
+
+        auto writeScope = [&](const char* scope,
+                              std::vector<ModalContributionEntry> entries,
+                              double totalDisplacementNormMm,
+                              double cancellationFactor) {
+            std::sort(
+                entries.begin(), entries.end(),
+                [](const ModalContributionEntry& a,
+                   const ModalContributionEntry& b) {
+                    if (a.modalNormMm != b.modalNormMm) {
+                        return a.modalNormMm > b.modalNormMm;
+                    }
+                    return a.modeIndex < b.modeIndex;
+                });
+
+            const int topCount = std::min<int>(10, entries.size());
+            double cumulative = 0.0;
+            for (int rank = 0; rank < topCount; ++rank) {
+                const auto& entry = entries[rank];
+                cumulative += entry.magnitudeRatio;
+                fmodalTop10 << std::scientific << std::setprecision(12)
+                            << step << "," << time << "," << side << ","
+                            << scope << "," << rank + 1 << ","
+                            << entry.modeIndex << "," << entry.frequencyHz << ","
+                            << entry.q << "," << entry.modalNormMm << ","
+                            << entry.magnitudeRatio << ","
+                            << entry.signedProjectionRatio << ","
+                            << cumulative << "," << totalDisplacementNormMm << ","
+                            << cancellationFactor << "\n";
+            }
+        };
+
+        auto xyzData =
+            makeEntries(xyzNormSquared, xyzProjection, totalXyzNormSquared);
+        const double totalXyzNormMm = std::sqrt(totalXyzNormSquared);
+        const double xyzCancellation =
+            totalXyzNormSquared > normEpsMm2
+                ? xyzData.second / totalXyzNormMm
+                : nan;
+        writeScope("surface_xyz", std::move(xyzData.first),
+                   totalXyzNormMm, xyzCancellation);
+
+        auto uyData =
+            makeEntries(uyNormSquared, uyProjection, totalUyNormSquared);
+        const double totalUyNormMm = std::sqrt(totalUyNormSquared);
+        const double uyCancellation =
+            totalUyNormSquared > normEpsMm2
+                ? uyData.second / totalUyNormMm
+                : nan;
+        writeScope("surface_uy", std::move(uyData.first),
+                   totalUyNormMm, uyCancellation);
+
+        std::vector<ModalContributionEntry> probeEntries(modeCount);
+        double probeTotalUy = 0.0;
+        double sumAbsProbeModeUy = 0.0;
+        for (int m = 0; m < modeCount; ++m) {
+            const double probeModeUy =
+                state.q[m] * 1.0e3 * modes.modes[m][probeId].uy;
+            probeEntries[m].modeIndex = m;
+            probeEntries[m].frequencyHz = modes.frequencies[m];
+            probeEntries[m].q = state.q[m];
+            probeEntries[m].modalNormMm = std::abs(probeModeUy);
+            probeTotalUy += probeModeUy;
+            sumAbsProbeModeUy += std::abs(probeModeUy);
+        }
+        for (int m = 0; m < modeCount; ++m) {
+            if (sumAbsProbeModeUy > 0.0) {
+                probeEntries[m].magnitudeRatio =
+                    probeEntries[m].modalNormMm / sumAbsProbeModeUy;
+            }
+            if (std::abs(probeTotalUy) > scalarEpsMm) {
+                const double probeModeUy =
+                    state.q[m] * 1.0e3 * modes.modes[m][probeId].uy;
+                probeEntries[m].signedProjectionRatio =
+                    probeModeUy / probeTotalUy;
+            }
+        }
+        const double probeCancellation =
+            std::abs(probeTotalUy) > scalarEpsMm
+                ? sumAbsProbeModeUy / std::abs(probeTotalUy)
+                : nan;
+        writeScope("probe_uy", std::move(probeEntries),
+                   std::abs(probeTotalUy), probeCancellation);
     };
 
 
@@ -427,6 +612,21 @@ void Simulation::run() {
         time_calcForce += elapsed_ms(t0, t1);}
 
         if (n % 5 == 0) {
+            const auto areaExtrema = std::minmax_element(
+                fCalc.harea.begin(), fCalc.harea.end());
+            const double minGlottalArea =
+                areaExtrema.first != fCalc.harea.end()
+                    ? *areaExtrema.first
+                    : std::numeric_limits<double>::quiet_NaN();
+            const double maxGlottalArea =
+                areaExtrema.second != fCalc.harea.end()
+                    ? *areaExtrema.second
+                    : std::numeric_limits<double>::quiet_NaN();
+            const double xLeft =
+                stateL.disp[nearestIdxL].uy - geomL.points[nearestIdxL].y;
+            const double xRight =
+                stateR.disp[nearestIdxR].uy - geomR.points[nearestIdxR].y;
+
             fa << std::setw(4) << n;
             fp << std::setw(4) << n;
             fsectionx << std::setw(4) << n;
@@ -455,12 +655,22 @@ void Simulation::run() {
                     << stateR.disp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n";
             fpv << n << " " << fCalc.outletPressure() << "\n";
             fuv << n << " " << fCalc.currentUg << "\n";
+            firregularity << std::scientific << std::setprecision(12)
+                          << n << "," << t << ","
+                          << xLeft << "," << xRight << ","
+                          << minGlottalArea << "," << maxGlottalArea << ","
+                          << fCalc.currentUg << "," << fCalc.outletPressure()
+                          << "," << static_cast<int>(fCalc.contactFlag) << "\n";
         }
         if (n % params.nwrite == 0) {
             // q is the committed modal state at t_n, exactly matching the
             // displacement/area/pressure records written above.
             writeModalDiagnostics(n, t, "L", mdataL, stateL, nearestIdxL, surfaceModeRmsL);
             writeModalDiagnostics(n, t, "R", mdataR, stateR, nearestIdxR, surfaceModeRmsR);
+            writeTop10ModalContributions(
+                n, t, "L", mdataL, stateL, nearestIdxL);
+            writeTop10ModalContributions(
+                n, t, "R", mdataR, stateR, nearestIdxR);
         }
         
         int icont_used_this_step = 0;

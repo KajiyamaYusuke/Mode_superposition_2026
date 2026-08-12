@@ -130,7 +130,16 @@ if (std::regex_search(line, match, rxX)) {
         return va < vb;
     });
 
-    nModes = modeKeys.size();
+    const int availableModes = static_cast<int>(modeKeys.size());
+    if (availableModes < nModes) {
+        throw std::runtime_error(
+            "VTU file contains only " + std::to_string(availableModes)
+            + " modes, but " + std::to_string(nModes) + " were requested");
+    }
+
+    // nModes is the number requested by param.txt and was set by initialize().
+    // modeKeys is frequency-sorted, so retaining its first nModes entries selects
+    // the requested number of lowest-frequency structural modes.
     modes.resize(nModes);
 
     for (int m = 0; m < nModes; ++m) {
@@ -159,8 +168,8 @@ if (std::regex_search(line, match, rxX)) {
     // }
     std::cout << "=======================================\n" << std::endl;
 
-    std::cout << "ModeData: Loaded " << nModes 
-              << " modes (" << nPoints << " points each)." << std::endl;
+    std::cout << "ModeData: Loaded " << nModes << " of " << availableModes
+              << " available modes (" << nPoints << " points each)." << std::endl;
 }
 
 
@@ -168,28 +177,37 @@ void ModeData::loadFreqDamping(const std::string& filename) {
     std::ifstream file(filename);
     if (!file) throw std::runtime_error("Cannot open frequency file: " + filename);
 
-    frequencies.clear();
-    dampingRatios.clear();
+    std::vector<double> availableFrequencies;
+    std::vector<double> availableDampingRatios;
 
     std::string line;
     while (std::getline(file, line)) {
         if (line.empty() || line[0] == '%') continue;
 
         std::istringstream ss(line);
-        double freqHz, omega, damping, Q;
-        ss >> freqHz >> omega >> damping >> Q;
+        double freqHz, omega, damping;
+        if (!(ss >> freqHz >> omega >> damping)) {
+            throw std::runtime_error("Invalid line in frequency file: " + line);
+        }
 
-        frequencies.push_back(freqHz);
-        dampingRatios.push_back(damping);
+        availableFrequencies.push_back(freqHz);
+        availableDampingRatios.push_back(damping);
     }
 
-    if (frequencies.size() != nModes) {
-        throw std::runtime_error("Mode count mismatch between VTU and frequency file");
+    if (availableFrequencies.size() < static_cast<std::size_t>(nModes)) {
+        throw std::runtime_error(
+            "Frequency file contains only "
+            + std::to_string(availableFrequencies.size()) + " modes, but "
+            + std::to_string(nModes) + " were requested");
     }
 
-    nModes = frequencies.size();
+    frequencies.assign(
+        availableFrequencies.begin(), availableFrequencies.begin() + nModes);
+    dampingRatios.assign(
+        availableDampingRatios.begin(), availableDampingRatios.begin() + nModes);
 
-    std::cout << "ModeData: Loaded frequencies for " << nModes << " modes." << std::endl;
+    std::cout << "ModeData: Loaded frequencies for " << nModes << " of "
+              << availableFrequencies.size() << " available modes." << std::endl;
 }
 
 void ModeData::normalizeModes(double mass, const Geometry& geom){

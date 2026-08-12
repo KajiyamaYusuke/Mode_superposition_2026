@@ -101,3 +101,42 @@ Run artificial-signal tests with:
 ```bash
 python3 -m unittest discover -s tools/tests -v
 ```
+
+## Irregular-vibration indicator export
+
+The simulator writes `output/irregularity_timeseries.csv` at the same cadence
+as `area.dat`. It contains synchronized time, left/right monitor displacement,
+minimum and maximum glottal area, flow rate, outlet pressure, and contact state.
+After removing the startup transient, calculate the indicators described in
+`vocal_fold_irregularity_metrics.md` with:
+
+```bash
+python3 tools/analyze_irregularity.py --run-dir output --start-time 0.15
+```
+
+`--run-dir` may be omitted. The default is the repository's `output/`
+directory even when the command is launched from inside `tools/`.
+
+This analyzer intentionally does not assign Type A--D. It saves one-row
+summaries (`irregularity_metrics.csv` and `.json`) plus peak sequences, Hilbert
+phase, spectra, cycle-lag repeat errors, and autocorrelation as separate CSVs.
+The figures are written under `output/figures/irregularity/`. Adjust
+`--prominence-ratio` after checking the peak markers in
+`timeseries_and_peaks.png`; the default is 5% of each signal's range.
+
+## Modal-energy share history
+
+Use the saved mass-normalized modal coordinates to compare how the structural
+energy is distributed among modes:
+
+```bash
+python3 tools/plot_modal_energy_share.py --run-dir output --start-time 0.15
+```
+
+For each side, the script ranks modes by their time-averaged energy-like
+quantity and plots the leading five energy shares relative to all retained
+modes. Both sides appear in one figure,
+`output/figures/modal_energy_share_top5.png`. The complete time history and
+ranking are saved as `modal_energy_share_timeseries.csv` and
+`modal_energy_share_summary.csv`. Use `--top-count` to change the number of
+displayed modes.
