@@ -8,6 +8,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from output_layout import output_path, result_path
 
 
 def arguments() -> argparse.Namespace:
@@ -31,7 +32,7 @@ def arguments() -> argparse.Namespace:
 
 def main() -> None:
     args = arguments()
-    path = args.run_dir / "poincare_points.csv"
+    path = result_path(args.run_dir, "poincare_points.csv")
     if not path.is_file():
         raise FileNotFoundError(
             f"{path} does not exist; run tools/analyze_dynamics.py first"
@@ -77,7 +78,7 @@ def main() -> None:
     )
     axis.grid(alpha=0.3)
     fig.tight_layout()
-    output = args.save or args.run_dir / "figures" / f"poincare_{x_column}_{y_column}.png"
+    output = args.save or output_path(args.run_dir, f"poincare_{x_column}_{y_column}.png")
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=250, bbox_inches="tight")
     print(f"Saved Poincaré plot: {output}")

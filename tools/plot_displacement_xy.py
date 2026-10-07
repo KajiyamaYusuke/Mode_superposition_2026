@@ -21,14 +21,14 @@ def parse_args() -> argparse.Namespace:
         "input",
         nargs="?",
         type=Path,
-        default=PROJECT_ROOT / "output" / "displace_xy.dat",
+        default=PROJECT_ROOT / "output" / "dat" / "displace_xy.dat",
         help="input data file (default: output/displace_xy.dat)",
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=PROJECT_ROOT / "output" / "displacement_xy.png",
+        default=PROJECT_ROOT / "output" / "png" / "displacement_xy.png",
         help="image output path (default: output/displacement_xy.png)",
     )
     parser.add_argument("--start", type=float, help="start time in seconds")

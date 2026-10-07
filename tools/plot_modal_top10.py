@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
         "input",
         nargs="?",
         type=Path,
-        default=REPO_ROOT / "output" / "modal_top10.csv",
+        default=REPO_ROOT / "output" / "csv" / "modal_top10.csv",
         help="Input CSV (default: output/modal_top10.csv).",
     )
     parser.add_argument(
@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=REPO_ROOT / "output",
+        default=REPO_ROOT / "output" / "png",
         help="Directory for PNG files (default: output).",
     )
     parser.add_argument(

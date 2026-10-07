@@ -40,7 +40,7 @@ PROJECT_DIR = Path("/home/kajiyama/code/Mode_superposition_2026")
 
 EXECUTABLE = PROJECT_DIR / "build" / "simulation"
 PARAM_FILE = PROJECT_DIR / "input" / "param.txt"
-DISP_DATA = PROJECT_DIR / "output" / "displace.dat"
+DISP_DATA = PROJECT_DIR / "output" / "dat" / "displace.dat"
 
 SAVE_DIR = Path("./damping_sweep")
 

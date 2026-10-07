@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy import signal
+from output_layout import result_path
 
 
 def read_key_value_file(path: Path) -> dict[str, str]:
@@ -30,10 +31,10 @@ def read_dt(run_dir: Path, explicit_dt: float | None = None) -> float:
         if explicit_dt <= 0:
             raise ValueError("--dt must be positive")
         return explicit_dt
-    manifest = read_key_value_file(run_dir / "manifest.txt")
+    manifest = read_key_value_file(result_path(run_dir, "manifest.txt"))
     if "dt_s" in manifest:
         return float(manifest["dt_s"])
-    params = run_dir / "params_used.txt"
+    params = result_path(run_dir, "params_used.txt")
     if params.is_file():
         lines = params.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):
@@ -76,7 +77,7 @@ def validate_time_series(
 def load_min_area(
     run_dir: Path, dt: float, allow_nan: bool = False
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    data = load_numeric(run_dir / "area.dat")
+    data = load_numeric(result_path(run_dir, "area.dat"))
     steps, sections = validate_time_series(data[:, 0], data[:, 1:], "area.dat", allow_nan)
     if np.any(sections < 0):
         warnings.warn("area.dat contains negative area values; values were not clipped", stacklevel=2)
@@ -239,13 +240,13 @@ def load_optional_signals(run_dir: Path, dt: float, target_time: np.ndarray) -> 
     }
     cache: dict[str, np.ndarray] = {}
     for name, (filename, column, first_is_step) in specs.items():
-        path = run_dir / filename
+        path = result_path(run_dir, filename)
         if not path.is_file():
             continue
         data = cache.setdefault(filename, load_numeric(path, column + 1))
         source_time = data[:, 0] * dt if first_is_step else data[:, 0]
         result[name] = interpolate_at(source_time, data[:, column], target_time)
-    modal_path = run_dir / "modal_contribution.csv"
+    modal_path = result_path(run_dir, "modal_contribution.csv")
     if modal_path.is_file():
         modal = pd.read_csv(modal_path)
         for side in ("L", "R"):

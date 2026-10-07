@@ -5,7 +5,7 @@ from scipy.signal import find_peaks
 # =========================
 # 設定
 # =========================
-filename = "../output/pressure_vt.dat"  # ファイルパス
+filename = "../output/dat/pressure_vt.dat"  # ファイルパス
 sim_dt = 1.0e-5
 output_interval = 5
 dt = sim_dt * output_interval

@@ -4,6 +4,8 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <stdexcept>
 
 // トリム関数（先頭・末尾の空白除去）
 static inline void trim(std::string &s) {
@@ -15,6 +17,34 @@ static inline void trim(std::string &s) {
 static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
     return s;
+}
+
+static double parseDoubleStrict(const std::string& value, const std::string& key) {
+    std::size_t used = 0;
+    double parsed = 0.0;
+    try {
+        parsed = std::stod(value, &used);
+    } catch (const std::exception&) {
+        throw std::runtime_error("invalid finite numeric value for " + key + ": " + value);
+    }
+    if (used != value.size() || !std::isfinite(parsed)) {
+        throw std::runtime_error("invalid finite numeric value for " + key + ": " + value);
+    }
+    return parsed;
+}
+
+static int parseIntStrict(const std::string& value, const std::string& key) {
+    std::size_t used = 0;
+    int parsed = 0;
+    try {
+        parsed = std::stoi(value, &used);
+    } catch (const std::exception&) {
+        throw std::runtime_error("invalid integer value for " + key + ": " + value);
+    }
+    if (used != value.size()) {
+        throw std::runtime_error("invalid integer value for " + key + ": " + value);
+    }
+    return parsed;
 }
 
 bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) {
@@ -67,12 +97,102 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         forcef  = std::stod(nextLine());
         famp    = std::stod(nextLine());
 
+        modeSelection.clear();
+
+        std::set<std::string> namedParameters;
+
         // Optional trailing values, in order:
-        // forceDirection (0/1), contactReferenceFrequencyHz, flowBlendLengthMm.
+        // forceDirection (0/1), contactReferenceFrequencyHz,
+        // flowBlendLengthMm, flowSeparationAreaRatio.
         // A frequency can be supplied without forceDirection because it is
         // unambiguously not 0 or 1 in ordinary use.
+        // Named values may be placed anywhere in this trailing section without
+        // shifting the historical positional values.
         std::vector<std::string> optional;
-        for (std::string value = nextLine(); !value.empty(); value = nextLine()) optional.push_back(value);
+        for (std::string value = nextLine(); !value.empty(); value = nextLine()) {
+            const auto equal = value.find('=');
+            if (equal == std::string::npos) {
+                optional.push_back(value);
+                continue;
+            }
+
+            std::string key = value.substr(0, equal);
+            std::string rhs = value.substr(equal + 1);
+            trim(key);
+            trim(rhs);
+            key = toLower(key);
+            key.erase(std::remove_if(key.begin(), key.end(), [](char c) {
+                return c == '_' || c == '-';
+            }), key.end());
+            if (!namedParameters.insert(key).second) {
+                throw std::runtime_error(key + " was specified more than once");
+            }
+            if (key == "modeselection") {
+                for (char& c : rhs) {
+                    if (c == ',' || c == ';' || c == '[' || c == ']') c = ' ';
+                }
+                std::istringstream selected(rhs);
+                int modeNumber = 0;
+                while (selected >> modeNumber) modeSelection.push_back(modeNumber);
+                if (modeSelection.empty() || (!selected.eof() && selected.fail())) {
+                    throw std::runtime_error("invalid modeSelection");
+                }
+            } else {
+                if (rhs.empty()) throw std::runtime_error(key + " must not be empty");
+                if (key == "leftfrequencyfile") leftFrequencyFile = rhs;
+                else if (key == "rightfrequencyfile") rightFrequencyFile = rhs;
+                else if (key == "leftmodefile") leftModeFile = rhs;
+                else if (key == "rightmodefile") rightModeFile = rhs;
+                else if (key == "leftsurfacenasfile" || key == "leftsurfacefile") leftSurfaceNasFile = rhs;
+                else if (key == "rightsurfacenasfile" || key == "rightsurfacefile") rightSurfaceNasFile = rhs;
+                else if (key == "initialgapmm") initialGapMm = parseDoubleStrict(rhs, key);
+                else if (key == "pressureramptimesec") {
+                    pressureRampTimeSec = parseDoubleStrict(rhs, key);
+                    pressureRampTimeSecExplicit = true;
+                }
+                else if (key == "diagnosticoutputintervalsteps") {
+                    diagnosticOutputIntervalSteps = parseIntStrict(rhs, key);
+                }
+                else if (key == "perturbationenabled") {
+                    const int enabled = parseIntStrict(rhs, key);
+                    if (enabled != 0 && enabled != 1) {
+                        throw std::runtime_error("perturbationEnabled must be 0 or 1");
+                    }
+                    perturbationEnabled = enabled != 0;
+                }
+                else if (key == "perturbationtimesec") perturbationTimeSec = parseDoubleStrict(rhs, key);
+                else if (key == "perturbationmodeindex") perturbationModeIndex = parseIntStrict(rhs, key);
+                else if (key == "perturbationamplitudeatprobemm") {
+                    perturbationAmplitudeAtProbeMm = parseDoubleStrict(rhs, key);
+                }
+                else if (key == "perturbationpattern") perturbationPattern = toLower(rhs);
+                else if (key == "apcontactdiagnosticenabled") {
+                    const int enabled = parseIntStrict(rhs, key);
+                    if (enabled != 0 && enabled != 1)
+                        throw std::runtime_error("apContactDiagnosticEnabled must be 0 or 1");
+                    apContactDiagnosticEnabled = enabled != 0;
+                }
+                else if (key == "apcontactanalysisrowsperend")
+                    apContactAnalysisRowsPerEnd = parseIntStrict(rhs, key);
+                else if (key == "apcontactanalysisdistancemm")
+                    apContactAnalysisDistanceMm = parseDoubleStrict(rhs, key);
+                else if (key == "apcontactexcludedrowsperend")
+                    apContactExcludedRowsPerEnd = parseIntStrict(rhs, key);
+                else if (key == "apcontactexcludeddistancemm")
+                    apContactExcludedDistanceMm = parseDoubleStrict(rhs, key);
+                else if (key == "contactdetailstartsec")
+                    contactDetailStartSec = parseDoubleStrict(rhs, key);
+                else if (key == "contactdetailendsec")
+                    contactDetailEndSec = parseDoubleStrict(rhs, key);
+                else if (key == "diagnosticloadmode") diagnosticLoadMode = toLower(rhs);
+                else if (key == "diagnosticreferencewindowstartsec")
+                    diagnosticReferenceWindowStartSec = parseDoubleStrict(rhs, key);
+                else if (key == "diagnosticreferencewindowendsec")
+                    diagnosticReferenceWindowEndSec = parseDoubleStrict(rhs, key);
+                else if (key == "fixednodeidsfile") fixedNodeIdsFile = rhs;
+                else throw std::runtime_error("unknown named parameter: " + key);
+            }
+        }
         std::size_t optionalIndex = 0;
         if (!optional.empty()) {
             const double first = std::stod(optional[0]);
@@ -83,14 +203,15 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         }
         if (optionalIndex < optional.size()) contactReferenceFrequencyHz = std::stod(optional[optionalIndex++]);
         if (optionalIndex < optional.size()) flowBlendLengthMm = std::stod(optional[optionalIndex++]);
+        if (optionalIndex < optional.size()) flowSeparationAreaRatio = std::stod(optional[optionalIndex++]);
         if (optionalIndex != optional.size()) throw std::runtime_error("too many optional parameter values");
         if (legacyIforce != iforce) {
             std::cerr << "[Parameters] legacy iforce=" << legacyIforce
                       << " differs from effective iforce=" << iforce
                       << "; using the latter.\n";
         }
-    } catch (...) {
-        err = "Parse error (check file format)";
+    } catch (const std::exception& exception) {
+        err = std::string("Parse error: ") + exception.what();
         return false;
     }
 
@@ -99,6 +220,17 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
 
 bool SimulationParams::validate(std::string& err) const {
     if (nmode <= 0) { err = "nmode must be > 0"; return false; }
+    std::set<int> selectedModes;
+    for (int modeNumber : modeSelection) {
+        if (modeNumber < 1 || modeNumber > nmode) {
+            err = "modeSelection entries must be between 1 and nmode";
+            return false;
+        }
+        if (!selectedModes.insert(modeNumber).second) {
+            err = "modeSelection must not contain duplicate mode numbers";
+            return false;
+        }
+    }
     if (nstep <= 0) { err = "nstep must be > 0"; return false; }
     if (dt <= 0.0)  { err = "dt must be > 0"; return false; }
     if (nwrite <= 0){ err = "nwrite must be > 0"; return false; }
@@ -121,6 +253,87 @@ bool SimulationParams::validate(std::string& err) const {
         err = "flowBlendLengthMm must be > 0";
         return false;
     }
+    if (!std::isfinite(flowSeparationAreaRatio)
+        || flowSeparationAreaRatio < 1.0) {
+        err = "flowSeparationAreaRatio must be finite and >= 1.0";
+        return false;
+    }
+    if (!std::isfinite(initialGapMm)) {
+        err = "initialGapMm must be finite";
+        return false;
+    }
+    if (!std::isfinite(pressureRampTimeSec) || pressureRampTimeSec <= 0.0) {
+        err = "pressureRampTimeSec must be finite and > 0";
+        return false;
+    }
+    if (diagnosticOutputIntervalSteps <= 0) {
+        err = "diagnosticOutputIntervalSteps must be > 0";
+        return false;
+    }
+    if (!std::isfinite(perturbationTimeSec) || perturbationTimeSec < 0.0) {
+        err = "perturbationTimeSec must be finite and >= 0";
+        return false;
+    }
+    if (perturbationModeIndex < 1 || perturbationModeIndex > nmode) {
+        err = "perturbationModeIndex must be between 1 and nmode";
+        return false;
+    }
+    if (!std::isfinite(perturbationAmplitudeAtProbeMm)
+        || perturbationAmplitudeAtProbeMm < 0.0) {
+        err = "perturbationAmplitudeAtProbeMm must be finite and >= 0";
+        return false;
+    }
+    if (perturbationPattern != "symmetric_opening") {
+        err = "perturbationPattern must be symmetric_opening";
+        return false;
+    }
+    if (apContactAnalysisRowsPerEnd < 0 || apContactExcludedRowsPerEnd < 0) {
+        err = "AP contact row counts must be >= 0";
+        return false;
+    }
+    if (!std::isfinite(apContactAnalysisDistanceMm)
+        || !std::isfinite(apContactExcludedDistanceMm)
+        || apContactAnalysisDistanceMm < 0.0
+        || apContactExcludedDistanceMm < 0.0) {
+        err = "AP contact distances must be finite and >= 0";
+        return false;
+    }
+    if (apContactAnalysisRowsPerEnd > 0 && apContactAnalysisDistanceMm > 0.0) {
+        err = "set only one of apContactAnalysisRowsPerEnd and apContactAnalysisDistanceMm";
+        return false;
+    }
+    if (apContactExcludedRowsPerEnd > 0 && apContactExcludedDistanceMm > 0.0) {
+        err = "set only one of apContactExcludedRowsPerEnd and apContactExcludedDistanceMm";
+        return false;
+    }
+    if ((contactDetailStartSec < 0.0) != (contactDetailEndSec < 0.0)
+        || (contactDetailStartSec >= 0.0 && contactDetailEndSec < contactDetailStartSec)) {
+        err = "contact detail interval must be disabled with two negative values or have end >= start";
+        return false;
+    }
+    if (diagnosticLoadMode != "live" && diagnosticLoadMode != "freeze_contact"
+        && diagnosticLoadMode != "freeze_fluid" && diagnosticLoadMode != "freeze_all") {
+        err = "diagnosticLoadMode must be live, freeze_contact, freeze_fluid, or freeze_all";
+        return false;
+    }
+    if (!std::isfinite(diagnosticReferenceWindowStartSec)
+        || !std::isfinite(diagnosticReferenceWindowEndSec)
+        || diagnosticReferenceWindowStartSec < 0.0
+        || diagnosticReferenceWindowEndSec <= diagnosticReferenceWindowStartSec) {
+        err = "diagnostic reference window must be finite with 0 <= start < end";
+        return false;
+    }
+    if (diagnosticLoadMode != "live"
+        && diagnosticReferenceWindowEndSec > perturbationTimeSec) {
+        err = "diagnostic reference window must end no later than perturbationTimeSec for frozen loads";
+        return false;
+    }
+    if (leftFrequencyFile.empty() || rightFrequencyFile.empty()
+        || leftModeFile.empty() || rightModeFile.empty()
+        || leftSurfaceNasFile.empty() || rightSurfaceNasFile.empty()) {
+        err = "left/right frequency, mode, and surface NAS files must not be empty";
+        return false;
+    }
     // 追加チェック（例: ファイル/ディレクトリ存在確認を入れるならここ）
     return true;
 }
@@ -128,6 +341,16 @@ bool SimulationParams::validate(std::string& err) const {
 void SimulationParams::print(std::ostream& os) const {
     os << "SimulationParams:\n";
     os << "  nmode   = " << nmode << "\n";
+    os << "  modeSelection = ";
+    if (modeSelection.empty()) {
+        os << "all modes 1..nmode";
+    } else {
+        for (std::size_t i = 0; i < modeSelection.size(); ++i) {
+            if (i) os << ",";
+            os << modeSelection[i];
+        }
+    }
+    os << "\n";
     os << "  nsurfz  = " << nsurfz << "\n";
     os << "  nstep   = " << nstep << "\n";
     os << "  nwrite  = " << nwrite << "\n";
@@ -143,6 +366,29 @@ void SimulationParams::print(std::ostream& os) const {
     os << "  forceDirection = " << forceDirection << "\n";
     os << "  contactReferenceFrequencyHz = " << contactReferenceFrequencyHz << "\n";
     os << "  flowBlendLengthMm = " << flowBlendLengthMm << "\n";
+    os << "  flowSeparationAreaRatio = " << flowSeparationAreaRatio << "\n";
+    os << "  initialGapMm = " << initialGapMm << " [mm]\n";
+    os << "  pressureRampTimeSec = " << pressureRampTimeSec
+       << (pressureRampTimeSecExplicit ? " [s] (explicit)\n" : " [s] (legacy omitted option)\n");
+    os << "  diagnosticOutputIntervalSteps = " << diagnosticOutputIntervalSteps << "\n";
+    os << "  perturbationEnabled = " << perturbationEnabled << "\n";
+    os << "  perturbationTimeSec = " << perturbationTimeSec << " [s]\n";
+    os << "  perturbationModeIndex = " << perturbationModeIndex << "\n";
+    os << "  perturbationAmplitudeAtProbeMm = "
+       << perturbationAmplitudeAtProbeMm << " [mm]\n";
+    os << "  perturbationPattern = " << perturbationPattern << "\n";
+    os << "  apContactDiagnosticEnabled = " << apContactDiagnosticEnabled << "\n";
+    os << "  apContactAnalysisRowsPerEnd = " << apContactAnalysisRowsPerEnd << "\n";
+    os << "  apContactAnalysisDistanceMm = " << apContactAnalysisDistanceMm << " [mm]\n";
+    os << "  apContactExcludedRowsPerEnd = " << apContactExcludedRowsPerEnd << "\n";
+    os << "  apContactExcludedDistanceMm = " << apContactExcludedDistanceMm << " [mm]\n";
+    os << "  contactDetailIntervalSec = [" << contactDetailStartSec << ", "
+       << contactDetailEndSec << "]\n";
+    os << "  diagnosticLoadMode = " << diagnosticLoadMode << "\n";
+    os << "  diagnosticReferenceWindowSec = ["
+       << diagnosticReferenceWindowStartSec << ", "
+       << diagnosticReferenceWindowEndSec << "]\n";
+    os << "  fixedNodeIdsFile = " << fixedNodeIdsFile.string() << "\n";
     os << "  ps      = " << ps << " [Pa]\n";
     os << "  rho     = " << rho << " [kg/m^3]\n";
     os << "  mu      = " << mu << " [Pa·s]\n";
@@ -151,4 +397,10 @@ void SimulationParams::print(std::ostream& os) const {
     os << "  freqFile  = " << freqFile.string() << "\n";
     os << "  modeFile  = " << modeFile.string() << "\n";
     os << "  surfFile  = " << surfFile.string() << "\n";
+    os << "  leftFrequencyFile  = " << leftFrequencyFile.string() << "\n";
+    os << "  rightFrequencyFile = " << rightFrequencyFile.string() << "\n";
+    os << "  leftModeFile       = " << leftModeFile.string() << "\n";
+    os << "  rightModeFile      = " << rightModeFile.string() << "\n";
+    os << "  leftSurfaceNasFile  = " << leftSurfaceNasFile.string() << "\n";
+    os << "  rightSurfaceNasFile = " << rightSurfaceNasFile.string() << "\n";
 }

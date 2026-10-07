@@ -13,6 +13,7 @@
 #include "SurfaceLoad.h"
 #include "ModalProjector.h"
 #include "FlowModel.h"
+#include "SeparationSelection.h"
 
 // Temporary façade for the coupled load assembly.  Geometry construction,
 // acoustic state integration, load storage, and modal projection are owned by
@@ -33,6 +34,7 @@ private:
     double lastSeparationX_ = std::numeric_limits<double>::quiet_NaN();
     double lastBlendEndX_ = std::numeric_limits<double>::quiet_NaN();
     double lastSeparationPressure_ = std::numeric_limits<double>::quiet_NaN();
+    SeparationSelection lastSeparationSelection_;
 
 public:
     ForceCalculator(const Geometry& geomL, const Geometry& geomR, 
@@ -44,7 +46,9 @@ public:
     void updateChannelSections();
     void applyFluidLoads(double t, int n);
     void projectLoadsToModes();
-    void applyContactLoads(int step = -1, int contactIter = -1);
+    void projectFluidLoadsToModes();
+    void applyContactLoads(int step = -1, int contactIter = -1,
+                           bool diagnosticOnly = false);
     void setContactMonitor(int surfaceI, int surfaceJ);
     void setOutputDirectory(const std::filesystem::path& directory);
     const std::filesystem::path& outputDirectory() const { return outputDirectory_; }
@@ -61,6 +65,16 @@ public:
     double separationX() const { return lastSeparationX_; }
     double separationBlendEndX() const { return lastBlendEndX_; }
     double separationPressure() const { return lastSeparationPressure_; }
+    double separationMinArea() const { return lastSeparationSelection_.minAreaMm2; }
+    double separationTargetArea() const { return lastSeparationSelection_.targetAreaMm2; }
+    double separationArea() const { return lastSeparationSelection_.sepAreaMm2; }
+    bool separationUsedFallback() const { return lastSeparationSelection_.usedFallback; }
+    const std::string& separationReason() const { return lastSeparationSelection_.reason; }
+    double rampRatio() const { return flowModel.rampRatio(); }
+    double lungPressure() const { return flowModel.lungPressure(); }
+    double downstreamPressure() const { return lastDownstreamPressure_; }
+    int pressureRecoveryClampCount() const { return lastPressureRecoveryClampCount_; }
+    bool flowHasNonfinite() const { return lastFlowHasNonfinite_; }
 
     // Compatibility-facing views.  Storage is owned by the focused components
     // below; retaining these names keeps the contact solver isolated during the
@@ -69,11 +83,19 @@ public:
     std::vector<std::vector<double>>& fyL;
     std::vector<std::vector<double>>& fzL;
     std::vector<double> fiL;                // 左のモード力
+    std::vector<double> fiFluidL;           // contact-free fluid modal force
+    std::vector<double> fiContactLowL, fiContactHighL, fiContactInteriorL;
+    std::vector<double> fiContactComputedLowL, fiContactComputedHighL,
+                        fiContactComputedInteriorL;
 
     std::vector<std::vector<double>>& fxR;
     std::vector<std::vector<double>>& fyR;
     std::vector<std::vector<double>>& fzR;
     std::vector<double> fiR;                // 右のモード力
+    std::vector<double> fiFluidR;           // contact-free fluid modal force
+    std::vector<double> fiContactLowR, fiContactHighR, fiContactInteriorR;
+    std::vector<double> fiContactComputedLowR, fiContactComputedHighR,
+                        fiContactComputedInteriorR;
 
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
@@ -111,6 +133,9 @@ public:
     std::ofstream contactMonitorFile;
     std::ofstream contactIterationFile;
     std::ofstream contactSearchFile;
+    std::ofstream contactFinalStateFile;
+    std::ofstream contactRegionSummaryFile;
+    std::ofstream contactPairsDetailFile;
     std::ofstream flowDebugFile;
     int contactMonitorI = -1;
     int contactMonitorJ = -1;
@@ -128,7 +153,10 @@ public:
     const SimulationParams& sp;
     int nxsup;
     double previous_contact_penetration_ = 0.0;
+    double lastDownstreamPressure_ = 0.0;
+    int lastPressureRecoveryClampCount_ = 0;
+    bool lastFlowHasNonfinite_ = false;
 
-    double findMinHarea();
-    int findNsep(double minH);
+    double findMinHarea() const;
+    int findNsep(double minH) const;
 };

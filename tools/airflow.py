@@ -5,7 +5,7 @@ import scienceplots
 plt.style.use(['science','ieee', 'no-latex'])
 
 # 1. datファイルを読み込む
-harea = np.loadtxt("../output/airflow_vt.dat")
+harea = np.loadtxt("../output/dat/airflow_vt.dat")
 
 labels = harea[:, 0]        # 1列目（時間ステップなど）
 values_m3 = harea[:, 1]     # 2列目（流量 [m^3/s]）
@@ -15,8 +15,8 @@ values_m3 = harea[:, 1]     # 2列目（流量 [m^3/s]）
 values_ml = values_m3 * 1e6 
 
 x = labels * 1e-5
-start_time = 0.1
-duration   = 0.05
+start_time = 0.2
+duration   = 0.1
 
 plt.figure(figsize=(8,2), dpi=100)
 
@@ -35,5 +35,5 @@ plt.xlim(start_time, start_time + duration)
 
 plt.tight_layout()
 # plt.legend() # labelを設定していないのでコメントアウトしました
-plt.savefig("result_airflow.png", dpi=300)
+plt.savefig("../output/png/result_airflow.png", dpi=300)
 plt.show()

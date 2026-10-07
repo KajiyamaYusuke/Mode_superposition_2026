@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # --- ファイル名を指定 ---
-filename = "../output/displace.dat"
+filename = "../output/dat/displace.dat"
 
 # --- データ読み込み ---
 # 空白区切りなので delimiter=' '（自動判別でもOK）

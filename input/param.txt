@@ -4,17 +4,17 @@
 # number of points along z-axis(nsurfz)
 18
 # number of step nstep
-25000
+20000
 # output interval nwrite
 20
 # time step for time integration dt
 1.0E-5
 # damping coefficient zetaL
-0.05
+0.03
 # damping coefficient zetaR
-0.05
-# contact coefficients kc1 , kc2 and kc3(Pa / m*rad)
-5    1e3   1e3
+0.03
+# contact coefficients kc1 , kc2 and kc3(Pa s/m)
+5   6000   5000
 # max iteration for contact calculation
 100
 # filename for eigenmode frequencies
@@ -30,7 +30,7 @@ result
 # kind of external force (iforce)
 0
 # subglottal pressure Ps (Pa)
-600
+2900
 # air density (kg/m3)
 1.13
 # air viscousity (Pa s)
@@ -47,4 +47,43 @@ result
 # frequency for external force (iforce=1)
 100
 # amplitude for force
--0.001
+-0.00001
+
+# Optional: one-based structural mode numbers to use.
+# If omitted, modes 1 through nmode are used as before.
+# paramで指定するモード番号は1始まり
+# modeSelection = 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+# modeSelection = 1,5,8
+
+# Fold-specific input files. Relative paths are based on this param file.
+leftFrequencyFile = M5_test/M5_freq_kawahara_mesh7_soft.txt
+rightFrequencyFile = M5_test/M5_freq_kawahara_mesh7_soft.txt
+leftModeFile = M5_test/M5_mode_kawahara_mesh7_soft.vtu
+rightModeFile = M5_test/M5_mode_kawahara_mesh7_soft.vtu
+leftSurfaceNasFile = M5_test/M5_surface_kawahara_mesh7_soft.nas
+rightSurfaceNasFile = M5_test/M5_surface_kawahara_mesh7_soft.nas
+
+# Optional diagnostic controls (uncomment for a new diagnostic run).
+# initialGapMm = 0.0
+# pressureRampTimeSec = 0.10
+# diagnosticOutputIntervalSteps = 5
+# perturbationEnabled = 1
+# perturbationTimeSec = 0.20
+# perturbationModeIndex = 5
+# perturbationAmplitudeAtProbeMm = 0.001
+# perturbationPattern = symmetric_opening
+
+# AP-end contact diagnostics. Defaults below observe only; no contact force is
+# removed and no load is frozen. AP row indices are zero-based in CSV output.
+# apContactDiagnosticEnabled = 0
+# apContactAnalysisRowsPerEnd = 3
+# apContactAnalysisDistanceMm = 0.0
+# apContactExcludedRowsPerEnd = 0
+# apContactExcludedDistanceMm = 0.0
+# contactDetailStartSec = -1.0
+# contactDetailEndSec = -1.0
+# diagnosticLoadMode = freeze_contact
+# diagnosticReferenceWindowStartSec = 0.15
+# diagnosticReferenceWindowEndSec = 0.19
+# Optional, zero-based VTU point IDs separated by whitespace or commas:
+# fixedNodeIdsFile = M5_test/fixed_node_ids.txt

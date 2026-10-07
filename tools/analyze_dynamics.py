@@ -27,6 +27,7 @@ from dynamics_common import (
     write_json,
 )
 from left_right_ratios import RatioConfig, analyze_left_right_ratios
+from output_layout import output_path, result_path
 
 
 def arguments() -> argparse.Namespace:
@@ -96,7 +97,7 @@ def save_figures(
     mode_energy: pd.DataFrame | None,
     show: bool,
 ) -> None:
-    figures = run_dir / "figures"
+    figures = run_dir / "png"
     figures.mkdir(exist_ok=True)
 
     fig, axis = plt.subplots(figsize=(10, 4))
@@ -235,7 +236,7 @@ def main() -> None:
     )
     mode_energy: pd.DataFrame | None = None
     mode_energy_summary = pd.DataFrame()
-    modal_path = run_dir / "modal_contribution.csv"
+    modal_path = result_path(run_dir, "modal_contribution.csv")
     if modal_path.is_file():
         modal = pd.read_csv(modal_path)
         required = {"time_s", "side", "mode_index", "frequency_hz", "q", "qdot"}
@@ -262,9 +263,9 @@ def main() -> None:
                 mode_energy_summary["std_energy_like"]
                 / mode_energy_summary["mean_energy_like"]
             )
-            mode_energy.to_csv(run_dir / "mode_energy_timeseries.csv", index=False)
+            mode_energy.to_csv(output_path(run_dir, "mode_energy_timeseries.csv"), index=False)
             mode_energy_summary.to_csv(
-                run_dir / "mode_energy_summary.csv", index=False
+                output_path(run_dir, "mode_energy_summary.csv"), index=False
             )
             energy_wide = mode_energy.assign(
                 mode_label=lambda frame: frame["side"]
@@ -273,7 +274,7 @@ def main() -> None:
             ).pivot_table(
                 index="time_s", columns="mode_label", values="energy_like"
             )
-            energy_wide.corr().to_csv(run_dir / "mode_energy_correlation.csv")
+            energy_wide.corr().to_csv(output_path(run_dir, "mode_energy_correlation.csv"))
     metrics = {
         "analysis_start_s": float(time[0]),
         "analysis_end_s": float(time[-1]),
@@ -296,11 +297,11 @@ def main() -> None:
         "classification_note": "heuristic classification; not a proof of chaos",
         "status": "completed" if len(cycles) >= args.minimum_cycles else "insufficient_cycles",
     }
-    write_json(run_dir / "metrics.json", metrics)
-    cycles.to_csv(run_dir / "cycle_metrics.csv", index=False)
-    poincare.to_csv(run_dir / "poincare_points.csv", index=False)
-    return_map.to_csv(run_dir / "return_map.csv", index=False)
-    spectrum.to_csv(run_dir / "spectrum.csv", index=False)
+    write_json(output_path(run_dir, "metrics.json"), metrics)
+    cycles.to_csv(output_path(run_dir, "cycle_metrics.csv"), index=False)
+    poincare.to_csv(output_path(run_dir, "poincare_points.csv"), index=False)
+    return_map.to_csv(output_path(run_dir, "return_map.csv"), index=False)
+    spectrum.to_csv(output_path(run_dir, "spectrum.csv"), index=False)
     if args.save_plots:
         save_figures(
             run_dir,

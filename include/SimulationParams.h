@@ -22,6 +22,8 @@ struct SimulationParams {
 
     // --- 数値パラメータ ---
     int    nmode   = 20;       // モード数
+    // Empty: use modes 1..nmode. Otherwise use only these one-based mode numbers.
+    std::vector<int> modeSelection;
     int    nsurfz  = 4;        // spanwise 分割数
     int    ncont   = 0;
     int    nstep   = 10000;    // 総ステップ数
@@ -50,6 +52,33 @@ struct SimulationParams {
     double contactReferenceFrequencyHz = 40.0;
     // Physical distance over which wall pressure blends after separation.
     double flowBlendLengthMm = 0.5;
+    // Flow separates at the first downstream section satisfying A/Amin.
+    double flowSeparationAreaRatio = 1.0;
+    // Diagnostic controls.  pressureRampTimeSec is the documented value for
+    // new runs; legacy files that omit it retain the historical 0.05 s ramp.
+    double initialGapMm = 0.0;
+    double pressureRampTimeSec = 0.10;
+    bool pressureRampTimeSecExplicit = false;
+    int diagnosticOutputIntervalSteps = 5;
+    bool perturbationEnabled = false;
+    double perturbationTimeSec = 0.20;
+    int perturbationModeIndex = 5;  // user-facing, one-based source mode
+    double perturbationAmplitudeAtProbeMm = 0.001;
+    std::string perturbationPattern = "symmetric_opening";
+    // AP-end/contact diagnostics.  AP rows are surface-grid j indices; a
+    // positive distance selects rows whose reference z lies within that many
+    // millimetres of either end.  Row and distance selectors are exclusive.
+    bool apContactDiagnosticEnabled = false;
+    int apContactAnalysisRowsPerEnd = 3;
+    double apContactAnalysisDistanceMm = 0.0;
+    int apContactExcludedRowsPerEnd = 0;
+    double apContactExcludedDistanceMm = 0.0;
+    double contactDetailStartSec = -1.0;
+    double contactDetailEndSec = -1.0;
+    std::string diagnosticLoadMode = "live";
+    double diagnosticReferenceWindowStartSec = 0.25;
+    double diagnosticReferenceWindowEndSec = 0.30;
+    fs::path fixedNodeIdsFile;
     double ps      = 1325.0; // 静圧 [Pa]
     double rho     = 1.225;    // 密度 [kg/m^3] (空気の初期値)
     double mu      = 1.81e-5;  // 動粘性係数 [Pa·s]（参考値）
@@ -63,7 +92,7 @@ struct SimulationParams {
     double r_sub   = 0.0125;// 声門下管の半径 [m] (2.5cm / 2)
     int    N_sub   = 10;     // 声門下管のセクション数 (Nsecgに対応)
 
-    double L_vt    = 17.5 * 1e-2;   // 声道の長さ [m]
+    double L_vt    = 0 * 1e-2;   // 声道の長さ [m]
     double r_vt    = 1.25 * 1e-2;   // 声道の断面積 [m^2]
     int    N_vt    = 10;    // 声道のセクション数 (Nsecpに対応)
 
@@ -73,6 +102,15 @@ struct SimulationParams {
     fs::path freqFile  = "no_mem_freq.txt";
     fs::path modeFile  = "no_mem_mode.vtk";
     fs::path surfFile  = "surface.txt";
+
+    // Per-fold model inputs. Relative paths are resolved from the directory
+    // containing the parameter file.
+    fs::path leftFrequencyFile  = "M5_test/M5_freq_T3_d2_b12c3.txt";
+    fs::path rightFrequencyFile = "M5_test/M5_freq_T3_d2_b2c2.txt";
+    fs::path leftModeFile       = "M5_test/M5_mode_T3_b12c3.vtu";
+    fs::path rightModeFile      = "M5_test/M5_mode_T3_b2c2.vtu";
+    fs::path leftSurfaceNasFile  = "M5_test/M5_surface_T3_d2.nas";
+    fs::path rightSurfaceNasFile = "M5_test/M5_surface_T3_d2.nas";
 
     // --- IO / 検証 ---
     // filename を読み込み、エラー文字列は err に格納して false を返す

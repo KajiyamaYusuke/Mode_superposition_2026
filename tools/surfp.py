@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
         "input",
         nargs="?",
         type=Path,
-        default=PROJECT_ROOT / "output" / "surfp_output.csv",
+        default=PROJECT_ROOT / "output" / "csv" / "surfp_output.csv",
         help="surface-point CSV (default: output/surfp_output.csv)",
     )
     parser.add_argument("--target-x", type=float, default=MONITOR_TARGET_X)

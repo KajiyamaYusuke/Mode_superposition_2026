@@ -29,6 +29,7 @@ add_executable(simulation
     src/modalProjector.cpp
     src/readParams.cpp
     src/rungeStep.cpp
+    src/separationSelection.cpp
     src/simulation.cpp
     src/state.cpp
     src/surfaceLoad.cpp
@@ -47,4 +48,31 @@ target_link_libraries(simulation
 
 if(PROFILE_CALCDIS)
     target_compile_definitions(simulation PRIVATE PROFILE_CALCDIS)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(test_separation_selection
+        tests/test_separation_selection.cpp
+        src/separationSelection.cpp
+    )
+    target_include_directories(test_separation_selection PRIVATE include)
+    add_test(NAME separation_selection COMMAND test_separation_selection)
+
+    add_executable(test_mode_selection
+        tests/test_mode_selection.cpp
+        src/modedata.cpp
+    )
+    target_include_directories(test_mode_selection PRIVATE include)
+    add_test(NAME mode_selection COMMAND test_mode_selection)
+
+    add_executable(test_input_file_params
+        tests/test_input_file_params.cpp
+        src/readParams.cpp
+    )
+    target_include_directories(test_input_file_params PRIVATE include)
+    add_test(
+        NAME input_file_params
+        COMMAND test_input_file_params ${CMAKE_SOURCE_DIR}/input/param.txt
+    )
 endif()

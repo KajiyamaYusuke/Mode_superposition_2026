@@ -1,0 +1,17 @@
+[project]
+name = "b-1-1st-and-3rd-week"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib==3.10.6",
+    "numpy==2.2.6",
+    "opencv-python==4.12.0.88",
+    "optuna==4.7.0",
+    "pandas==2.3.3",
+    "pillow==12.0.0",
+    "scienceplots==2.2.0",
+    "scikit-learn==1.7.2",
+    "scipy==1.15.3",
+    "seaborn==0.13.2",
+    "tqdm==4.67.3",
+]

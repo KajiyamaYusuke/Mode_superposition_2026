@@ -64,12 +64,18 @@ void FlowModel::advance(double time, double dt, double minimumArea, double previ
 
 void FlowModel::calcFlowStep(double time, double dt, double minimumArea) {
     const int ng = sp_->N_sub, nv = sp_->N_vt;
-    const double ramp = time < 0.05 ? 0.5*(1.0-std::cos(M_PI*time/0.05)) : 1.0;
-    const double lungPressure = sp_->ps*ramp;
+    // The checked-in solver historically used 0.05 s although the model
+    // documentation stated 0.10 s.  Preserve omitted-option runs exactly;
+    // new diagnostic inputs should set pressureRampTimeSec explicitly.
+    const double rampTime = sp_->pressureRampTimeSecExplicit
+        ? sp_->pressureRampTimeSec : 0.05;
+    rampRatio_ = time < rampTime
+        ? 0.5 * (1.0 - std::cos(M_PI * time / rampTime)) : 1.0;
+    lungPressure_ = sp_->ps * rampRatio_;
     for (int j=0; j<ng; ++j) Pu_[j] += Uu_[j]-Uu_[j+1];
     Pu_[ng] += Uu_[ng]-previousUg_;
     Pu_[ng+1] += previousUg_-Ud_[0];
-    Uu_[0] -= dt/Lui_*(dt/Cui_*Pu_[0]-lungPressure);
+    Uu_[0] -= dt/Lui_*(dt/Cui_*Pu_[0]-lungPressure_);
     Uu_[1] -= dt/(Lui_+Lu_)*(dt/Cu_*Pu_[1]-dt/Cui_*Pu_[0]+R2_*Uu_[1]);
     for (int j=2; j<ng+1; ++j)
         Uu_[j] -= dt/(2.0*Lu_)*(dt/Cu_*Pu_[j]-dt/Cu_*Pu_[j-1]+R2_*Uu_[j]);

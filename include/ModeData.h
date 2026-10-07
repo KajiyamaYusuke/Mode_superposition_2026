@@ -14,8 +14,14 @@ public:
     std::vector<std::vector<Displacement>> modes; // [nModes][nPoints]
     std::vector<double> frequencies;
     std::vector<double> dampingRatios;
+    // Original zero-based indices in the frequency-sorted input files.
+    std::vector<int> sourceModeIndices;
 
-    void initialize(int nModes_, const Geometry& geom);
+    void initialize(int nModes_, const Geometry& geom,
+                    const std::vector<int>& selectedModeNumbers = {});
+    int sourceModeIndex(int activeModeIndex) const {
+        return sourceModeIndices.at(activeModeIndex);
+    }
     // VTU から変位を読み込む
     void loadFromVTU(const std::string& filename, const Geometry& geom);
 

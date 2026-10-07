@@ -9,7 +9,7 @@ import numpy as np
 import scienceplots  # noqa: F401  (registers the SciencePlots styles)
 
 
-DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "output" / "area.dat"
+DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "output" / "dat" / "area.dat"
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,12 +68,12 @@ def main() -> None:
         )
 
     plt.style.use(["science", "ieee", "no-latex"])
-    plt.figure(figsize=(12, 4), dpi=100)
+    plt.figure(figsize=(11, 4), dpi=100)
     plt.plot(time[mask], row_min[mask], linestyle="-", color="#0072B2")
-    plt.xlabel("Time [s]", fontsize=24)
-    plt.ylabel("area [mm^2]", fontsize=24)
-    plt.tick_params(labelsize=20)
-    plt.ylim(-0.5, 15)
+    plt.xlabel("Time [s]", fontsize=28)
+    plt.ylabel("area [mm^2]", fontsize=28)
+    plt.tick_params(labelsize=24)
+    plt.ylim(-0.5, 12)
     plt.grid(True)
     plt.tight_layout()
     plt.show()

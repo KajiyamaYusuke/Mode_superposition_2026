@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import signal
+from output_layout import output_path, result_path
 
 
 SIGNALS = ("x_left_mm", "x_right_mm", "glottal_area_min_mm2")
@@ -38,7 +39,7 @@ def arguments() -> argparse.Namespace:
 
 
 def load_timeseries(run_dir: Path, start: float | None, end: float | None) -> pd.DataFrame:
-    path = run_dir / "irregularity_timeseries.csv"
+    path = result_path(run_dir, "irregularity_timeseries.csv")
     if not path.is_file():
         raise FileNotFoundError(
             f"{path} is missing. Rebuild and rerun the simulation to create it: "
@@ -175,7 +176,7 @@ def save_plots(run_dir: Path, frame: pd.DataFrame, peaks: dict[str, pd.DataFrame
                phases: pd.DataFrame, spectra: dict[str, pd.DataFrame],
                repeats: pd.DataFrame, correlations: pd.DataFrame,
                max_frequency: float, show: bool) -> None:
-    figure_dir = run_dir / "figures" / "irregularity"
+    figure_dir = run_dir / "png" / "irregularity"
     figure_dir.mkdir(parents=True, exist_ok=True)
     time = frame.time_s.to_numpy()
 
@@ -240,13 +241,13 @@ def main() -> None:
         for name in SIGNALS
     }
     for name, table in peaks.items():
-        table.to_csv(run_dir / f"irregularity_peaks_{name}.csv", index=False)
+        table.to_csv(output_path(run_dir, f"irregularity_peaks_{name}.csv"), index=False)
 
     phases, phase_metrics = phase_data(time, frame.x_left_mm.to_numpy(), frame.x_right_mm.to_numpy())
-    phases.to_csv(run_dir / "irregularity_phase.csv", index=False)
+    phases.to_csv(output_path(run_dir, "irregularity_phase.csv"), index=False)
     spectra = {name: spectrum(time, frame[name].to_numpy()) for name in SIGNALS}
     pd.concat(spectra, names=["signal"]).reset_index(level=0).to_csv(
-        run_dir / "irregularity_spectra.csv", index=False
+        output_path(run_dir, "irregularity_spectra.csv"), index=False
     )
 
     repeat_rows = []
@@ -273,19 +274,19 @@ def main() -> None:
     metrics["peak_count_right_over_left"] = right_count / left_count if left_count else np.nan
 
     repeats = pd.DataFrame(repeat_rows)
-    repeats.to_csv(run_dir / "irregularity_repeatability.csv", index=False)
+    repeats.to_csv(output_path(run_dir, "irregularity_repeatability.csv"), index=False)
     correlations = pd.DataFrame({"lag_s": autocorrelation(time, frame[SIGNALS[0]].to_numpy(), SIGNALS[0]).lag_s})
     for name in SIGNALS:
         correlations[name] = autocorrelation(time, frame[name].to_numpy(), name)[name]
-    correlations.to_csv(run_dir / "irregularity_autocorrelation.csv", index=False)
+    correlations.to_csv(output_path(run_dir, "irregularity_autocorrelation.csv"), index=False)
     json_metrics = {
         key: (None if isinstance(value, float) and not np.isfinite(value) else value)
         for key, value in metrics.items()
     }
-    (run_dir / "irregularity_metrics.json").write_text(
+    output_path(run_dir, "irregularity_metrics.json").write_text(
         json.dumps(json_metrics, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
-    pd.DataFrame([metrics]).to_csv(run_dir / "irregularity_metrics.csv", index=False)
+    pd.DataFrame([metrics]).to_csv(output_path(run_dir, "irregularity_metrics.csv"), index=False)
     save_plots(
         run_dir, frame, peaks, phases, spectra, repeats, correlations,
         args.max_frequency, args.show

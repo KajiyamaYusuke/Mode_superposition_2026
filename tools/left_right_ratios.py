@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import signal
+from output_layout import output_path, result_path
 
 
 @dataclass
@@ -92,7 +93,7 @@ def _header_columns(path: Path) -> list[str]:
 def load_displacements(
     run_dir: Path, left_column: str, right_column: str
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    path = run_dir / "displace.dat"
+    path = result_path(run_dir, "displace.dat")
     if not path.is_file():
         raise FileNotFoundError(path)
     columns = _header_columns(path)
@@ -276,7 +277,7 @@ def classify_amplitude_ratio(
 
 
 def _read_pressure(run_dir: Path) -> float:
-    path = run_dir / "params_used.txt"
+    path = result_path(run_dir, "params_used.txt")
     if not path.is_file():
         return np.nan
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -299,7 +300,7 @@ def _ratio_figures(
     left_cycles: pd.DataFrame,
     right_cycles: pd.DataFrame,
 ) -> None:
-    figures = run_dir / "figures"
+    figures = run_dir / "png"
     figures.mkdir(exist_ok=True)
     fig, axis = plt.subplots(figsize=(10, 4))
     axis.plot(time, left, label="Left", linewidth=1)
@@ -366,8 +367,8 @@ def analyze_left_right_ratios(
         right_peaks, right_cycles = detect_cycles(
             time, right, right_filtered, right_frequency, config
         )
-        left_cycles.to_csv(run_dir / "left_cycle_metrics.csv", index=False)
-        right_cycles.to_csv(run_dir / "right_cycle_metrics.csv", index=False)
+        left_cycles.to_csv(output_path(run_dir, "left_cycle_metrics.csv"), index=False)
+        right_cycles.to_csv(output_path(run_dir, "right_cycle_metrics.csv"), index=False)
 
         left_periods = (
             left_cycles.loc[left_cycles["period_valid"], "period_raw_s"].to_numpy()
@@ -482,7 +483,7 @@ def analyze_left_right_ratios(
     normalized["status"] = summary["status"]
     normalized["warning"] = summary["warning"]
     pd.DataFrame([normalized]).to_csv(
-        run_dir / "left_right_ratio_metrics.csv", index=False
+        output_path(run_dir, "left_right_ratio_metrics.csv"), index=False
     )
     return normalized
 

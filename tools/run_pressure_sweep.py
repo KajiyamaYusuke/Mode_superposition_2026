@@ -20,20 +20,17 @@ import pandas as pd
 
 from dynamics_common import replace_pressure_parameter, write_json
 from left_right_ratios import write_sweep_ratio_outputs
+from output_layout import output_path, result_path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 ARCHIVE_FILES = [
-    "manifest.txt",
-    "area.dat",
-    "airflow_vt.dat",
-    "displace.dat",
-    "displace_xy.dat",
-    "pressure.dat",
-    "pressure_vt.dat",
-    "modal_contribution.csv",
-    "modal_dominant.csv",
-    "contact_iteration_debug.csv",
+    "txt/manifest.txt",
+    "dat/area.dat", "dat/airflow_vt.dat", "dat/displace.dat",
+    "dat/displace_xy.dat", "dat/pressure.dat", "dat/pressure_vt.dat",
+    "csv/modal_contribution.csv", "csv/modal_dominant.csv",
+    "csv/contact_iteration_debug.csv", "csv/contact_final_state.csv",
+    "csv/contact_coupling_debug.csv",
 ]
 
 
@@ -109,9 +106,9 @@ def write_summary(sweep_dir: Path) -> None:
     for status_path in sorted(sweep_dir.glob("pressure_*/status.json")):
         status = json.loads(status_path.read_text(encoding="utf-8"))
         run_dir = status_path.parent
-        metrics_path = run_dir / "metrics.json"
+        metrics_path = result_path(run_dir, "metrics.json")
         metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.is_file() else {}
-        ratio_path = run_dir / "left_right_ratio_metrics.csv"
+        ratio_path = result_path(run_dir, "left_right_ratio_metrics.csv")
         ratio: dict[str, Any] = {}
         if ratio_path.is_file():
             ratio_row = pd.read_csv(ratio_path).iloc[0].to_dict()
@@ -135,7 +132,7 @@ def write_summary(sweep_dir: Path) -> None:
                 **ratio,
             }
         )
-        cycles_path = run_dir / "cycle_metrics.csv"
+        cycles_path = result_path(run_dir, "cycle_metrics.csv")
         if cycles_path.is_file():
             with cycles_path.open(newline="", encoding="utf-8") as stream:
                 for cycle in csv.DictReader(stream):
@@ -257,8 +254,10 @@ def main() -> None:
         for name in ARCHIVE_FILES:
             source = output_dir / name
             if source.is_file():
-                shutil.copy2(source, run_dir / name)
-        shutil.copy2(generated_param, run_dir / "params_used.txt")
+                destination = run_dir / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+        shutil.copy2(generated_param, output_path(run_dir, "params_used.txt"))
         analysis_command = [
             sys.executable,
             str(ROOT / "tools" / "analyze_dynamics.py"),
@@ -293,8 +292,9 @@ def main() -> None:
         ]
         analysis = subprocess.run(analysis_command, env=environment, check=False)
         metrics = {}
-        if (run_dir / "metrics.json").is_file():
-            metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+        metrics_path = result_path(run_dir, "metrics.json")
+        if metrics_path.is_file():
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
         final_status = metrics.get("status", "completed") if analysis.returncode == 0 else "analysis_failed"
         write_json(
             status_path,

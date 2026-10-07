@@ -7,9 +7,18 @@
 #include <regex>
 
 
-void ModeData::initialize(int nModes_, const Geometry& geom) {
-    nModes  = nModes_;
-    int nPoints = geom.nPoints;
+void ModeData::initialize(int nModes_, const Geometry& geom,
+                          const std::vector<int>& selectedModeNumbers) {
+    sourceModeIndices.clear();
+    if (selectedModeNumbers.empty()) {
+        for (int m = 0; m < nModes_; ++m) sourceModeIndices.push_back(m);
+    } else {
+        for (int modeNumber : selectedModeNumbers) {
+            sourceModeIndices.push_back(modeNumber - 1);
+        }
+    }
+    nModes = static_cast<int>(sourceModeIndices.size());
+    nPoints = geom.nPoints;
 
     // モード形状の初期化 [nModes][nPoints]
     modes.assign(nModes, std::vector<Displacement>(nPoints, Displacement()));
@@ -131,10 +140,13 @@ if (std::regex_search(line, match, rxX)) {
     });
 
     const int availableModes = static_cast<int>(modeKeys.size());
-    if (availableModes < nModes) {
+    const int requiredModes = sourceModeIndices.empty()
+        ? 0 : *std::max_element(sourceModeIndices.begin(), sourceModeIndices.end()) + 1;
+    if (availableModes < requiredModes) {
         throw std::runtime_error(
             "VTU file contains only " + std::to_string(availableModes)
-            + " modes, but " + std::to_string(nModes) + " were requested");
+            + " modes, but selected mode " + std::to_string(requiredModes)
+            + " was requested");
     }
 
     // nModes is the number requested by param.txt and was set by initialize().
@@ -143,7 +155,7 @@ if (std::regex_search(line, match, rxX)) {
     modes.resize(nModes);
 
     for (int m = 0; m < nModes; ++m) {
-        const std::string& key = modeKeys[m];
+        const std::string& key = modeKeys[sourceModeIndices[m]];
 
         const auto& x = xData[key];
         const auto& y = yData[key];
@@ -194,17 +206,21 @@ void ModeData::loadFreqDamping(const std::string& filename) {
         availableDampingRatios.push_back(damping);
     }
 
-    if (availableFrequencies.size() < static_cast<std::size_t>(nModes)) {
+    const int requiredModes = sourceModeIndices.empty()
+        ? 0 : *std::max_element(sourceModeIndices.begin(), sourceModeIndices.end()) + 1;
+    if (availableFrequencies.size() < static_cast<std::size_t>(requiredModes)) {
         throw std::runtime_error(
             "Frequency file contains only "
             + std::to_string(availableFrequencies.size()) + " modes, but "
-            + std::to_string(nModes) + " were requested");
+            + std::to_string(requiredModes) + " was requested");
     }
 
-    frequencies.assign(
-        availableFrequencies.begin(), availableFrequencies.begin() + nModes);
-    dampingRatios.assign(
-        availableDampingRatios.begin(), availableDampingRatios.begin() + nModes);
+    frequencies.resize(nModes);
+    dampingRatios.resize(nModes);
+    for (int m = 0; m < nModes; ++m) {
+        frequencies[m] = availableFrequencies[sourceModeIndices[m]];
+        dampingRatios[m] = availableDampingRatios[sourceModeIndices[m]];
+    }
 
     std::cout << "ModeData: Loaded frequencies for " << nModes << " of "
               << availableFrequencies.size() << " available modes." << std::endl;

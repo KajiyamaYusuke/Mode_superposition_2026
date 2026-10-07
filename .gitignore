@@ -19,6 +19,8 @@ input/
 *.txt
 !requirements-analysis.txt
 __pycache__/
+.venv/
+diagnostic_runs/
 
 # VSCode 設定
 .vscode/

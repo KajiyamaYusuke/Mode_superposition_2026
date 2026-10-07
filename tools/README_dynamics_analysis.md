@@ -23,11 +23,61 @@ python3 tools/analyze_dynamics.py \
   --run-dir output --start-time 0.15 --last-cycles 50
 ```
 
+## Output layout
+
+Generated results are grouped by file type instead of being written directly
+under `output/`:
+
+- `output/dat/`: solver time histories (`area.dat`, `displace.dat`, pressures, flow)
+- `output/csv/`: tabular diagnostics and analysis results
+- `output/png/`: plots (irregularity plots use `output/png/irregularity/`)
+- `output/txt/`: `manifest.txt`, `params_used.txt`, and text logs
+- `output/wav/`: synthesized and reference audio
+- `output/json/`: analysis summaries
+
+Analysis commands still take `--run-dir output`; maintained analysis tools find
+the appropriate subdirectory automatically and can also read legacy flat runs.
+
+For contact-coefficient tuning, compare `csv/contact_iteration_debug.csv`,
+`csv/contact_coupling_debug.csv`, and `csv/contact_final_state.csv`. The last
+file measures penetration after the final contact load has been applied.
+
+## Steinecke--Herzel sweep classification
+
+`python3 tools/spectol_sweep.py` now classifies the final 0.15 s of each
+successful pressure/damping case using the unreduced right:left peak-count
+label (`1:1`, `2:2`, `5:8`, etc.). It writes the sweep table to
+`output/csv/steinecke_classification_summary.csv`, detailed peak/count-window/
+period-error/map/spectrum tables under `output/csv/classification/`, and one
+four-panel verification plot per condition under `output/png/classification/`.
+`uncertain` and candidate labels are intentional: finite-period locking is not
+asserted when peak-count, next-maximum-map, left-period, or subharmonic checks
+conflict.
+
+## Stiffness-condition comparison
+
+Calculate left/right displacement jitter, shimmer, frequency/amplitude ratios,
+per-side standard deviations, and bootstrap uncertainty for several completed
+runs in one command:
+
+```bash
+python3 tools/compare_stiffness_metrics.py \
+  baseline=analysis_runs/baseline \
+  stiff_left=analysis_runs/stiff_left \
+  stiff_right=analysis_runs/stiff_right
+```
+
+With no run arguments it analyzes the current `output/`. Results are written
+to `output/csv/stiffness_comparison_metrics.csv`, cycle-level values to
+`output/csv/stiffness_cycle_metrics.csv`, and a four-panel comparison to
+`output/png/stiffness_comparison.png`. The default analysis interval is the
+last 0.15 s; change it with `--duration`.
+
 The analyzer reads `dt` from `manifest.txt` unless `--dt` is supplied. It
 interprets the first column of `area.dat` as a step number, produces
 `metrics.json`, `cycle_metrics.csv`, `poincare_points.csv`, `return_map.csv`,
-and diagnostic figures under `figures/`. Always inspect
-`figures/time_series.png` to confirm that detected events match the waveform.
+and diagnostic figures under `png/`. Always inspect
+`png/time_series.png` to confirm that detected events match the waveform.
 
 The same command independently detects peaks in the `uyL_mm` and `uyR_mm`
 columns of `displace.dat`. It writes:
@@ -36,7 +86,7 @@ columns of `displace.dat`. It writes:
   dominant frequencies, and 2:1 candidate classes.
 - `left_cycle_metrics.csv` and `right_cycle_metrics.csv`: raw periods,
   validity flags, peaks, troughs, and peak-to-trough amplitudes.
-- `figures/left_right_displacement.png`,
+- `png/left_right_displacement.png`,
   `left_right_cycle_period.png`, and `left_right_cycle_amplitude.png`.
 
 Defaults can be adjusted without breaking the existing command:
@@ -102,6 +152,34 @@ Run artificial-signal tests with:
 python3 -m unittest discover -s tools/tests -v
 ```
 
+## Minimal modal-work exit test
+
+Compare one `live` run with the matching `freeze_fluid` run for modes 1, 4,
+and 5:
+
+```bash
+python3 tools/analyze_modal_exit_test.py \
+  diagnostic_runs/example/A_live \
+  diagnostic_runs/example/A_freeze_fluid \
+  --modes 1,4,5
+```
+
+The freeze/perturbation time, reference window, time step, damping ratios, and
+run identity are read from each run's manifests. Use `--switch-time`,
+`--reference-window START END`, and one or two `--window START END` options to
+override them. With no `--window`, two adjacent post-switch windows are derived
+from the recorded switch and common data duration; no absolute freeze time is
+embedded in the tool.
+
+The tool reads `modal_force_split.csv` and `perturbation_energy.csv` in chunks,
+retaining only the selected modes. It separates applied fluid force from the
+total applied load, reuses the solver's internal-dt cumulative work when
+available, and compares it against two integrations of the decimated data.
+Outputs are `modal_exit_summary.csv`, `modal_exit_response.png`,
+`modal_exit_work.png`, and `modal_exit_report.md` under a sibling
+`modal_exit_test/` directory unless `--output-directory` is supplied. Work is
+reported in generalized mass-normalized units, not labelled J/W.
+
 ## Irregular-vibration indicator export
 
 The simulator writes `output/irregularity_timeseries.csv` at the same cadence
@@ -140,3 +218,120 @@ modes. Both sides appear in one figure,
 ranking are saved as `modal_energy_share_timeseries.csv` and
 `modal_energy_share_summary.csv`. Use `--top-count` to change the number of
 displayed modes.
+
+## Self-oscillation diagnostics
+
+The solver writes `csv/flow_diagnostics_v2.csv`, `csv/modal_energy.csv`, and
+`csv/energy_summary.csv` at `diagnosticOutputIntervalSteps` (default: 5).
+`modal_energy.csv` separates the contact-free fluid generalized force from the
+total force used by the integrator. Its force, power, work, and energy values
+are in **mass-normalized coordinate units**; they must not be interpreted as
+SI joules until the mode normalization has been independently verified.
+
+Optional trailing `key=value` parameters are:
+
+```text
+initialGapMm=0.0
+pressureRampTimeSec=0.10
+diagnosticOutputIntervalSteps=5
+perturbationEnabled=0
+perturbationTimeSec=0.20
+perturbationModeIndex=5
+perturbationAmplitudeAtProbeMm=0.001
+perturbationPattern=symmetric_opening
+```
+
+The repository's historical implementation actually used a 0.05 s ramp even
+though the diagnostic specification described it as 0.10 s. To preserve
+bitwise behavior for legacy parameter files, omission of
+`pressureRampTimeSec` retains 0.05 s; new diagnostic and sweep inputs write
+`pressureRampTimeSec=0.10` explicitly.
+
+A negative `initialGapMm` is diagnostic geometric precompression, not a
+physical adduction force. The perturbation mode is one-based. The requested
+probe displacement increment is applied once in opposite opening directions.
+
+Analyze a completed run with:
+
+```bash
+python tools/analyze_self_oscillation.py output \
+  --analysis-start 0.15 --analysis-end 0.50 --tail-duration 0.10
+```
+
+This creates `json/analysis_summary.json`, `csv/analysis_summary.csv`, and
+`png/diagnostic_overview.png`. Missing optional inputs are reported as
+warnings and do not prevent the available signals from being analyzed.
+
+Run the pressure-alignment and initial-gap sweep with:
+
+```bash
+python tools/run_diagnostic_sweep.py --dry-run
+python tools/run_diagnostic_sweep.py --jobs 1 --omp-threads 4
+```
+
+The first stage runs 2900, 3300, 3600, and 4000 Pa and selects the case whose
+tail-average `currentPg` is closest to 2900 Pa. The second stage runs 0.0,
+-0.1, and -0.2 mm at that pressure with the perturbation enabled. Each
+condition has an independent directory and records its input, command, Git
+commit, UTC timestamps, and exit status. Use `--jobs` cautiously: every
+process also uses OpenMP threads.
+
+## AP端部接触診断
+
+通常計算を変えずにログだけ有効化する最小設定は次のとおりです。
+
+```text
+apContactDiagnosticEnabled=1
+apContactAnalysisRowsPerEnd=3
+apContactAnalysisDistanceMm=0
+apContactExcludedRowsPerEnd=0
+apContactExcludedDistanceMm=0
+contactDetailStartSec=0.349
+contactDetailEndSec=0.351
+diagnosticLoadMode=live
+diagnosticReferenceWindowStartSec=0.25
+diagnosticReferenceWindowEndSec=0.30
+```
+
+行数指定と距離指定は同時に使えません。`apContactExcludedRowsPerEnd=3`
+は `j<3` と `j>=N_AP-3` で検出された接触をログに残したまま、適用反力を
+0にします。詳細区間をともに負値にするとペア詳細ログを無効化します。
+
+A/Bケースと荷重凍結ケースは既存 `output/` を上書きせずに実行できます。
+
+```bash
+python tools/run_ap_contact_diagnostics.py --dry-run
+python tools/run_ap_contact_diagnostics.py --stage ab --omp-threads 4
+python tools/run_ap_contact_diagnostics.py --stage freeze --omp-threads 4
+```
+
+`--stage freeze` は `live`, `freeze_contact`, `freeze_fluid`, `freeze_all`
+を同じ入力から決定的に再実行します。凍結値は基準窓の非ゼロ平均荷重で、
+切替は擾乱時刻です。各ケースの `run_manifest.json` と最上位の
+`run_summary.json`（失敗時は `failures.json`）を確認してください。
+
+2ケースの比較例です。
+
+```bash
+python tools/analyze_ap_contact.py \
+  diagnostic_runs/ap_contact_YYYYMMDD_HHMMSS/A_live_contact \
+  diagnostic_runs/ap_contact_YYYYMMDD_HHMMSS/B_exclude_ap_ends \
+  --reference-window 0.25 0.30 \
+  --perturbation-time 0.35 --fit-window 0.37 0.60
+```
+
+主な出力の見方:
+
+- `contact_region_summary.csv`: `ap_low/ap_high` と `interior` のめり込み・反力を比較します。`negative_gap_fraction` は候補ペアのサンプル数比です。
+- `contact_pairs_detail.csv`: 接触した `j` と左右セグメント、マスクされたペア (`excluded=1`) を確認します。
+- `modal_force_split.csv`: 流体・AP低端・AP高端・内部接触力と、積分へ渡した `applied_force` を比較します。荷重時刻は `t`、状態時刻は `t+dt` です。
+- `gap_field.csv`: 初期、基準窓終端、擾乱直後の符号付きy間隙です。対応表面格子節点の平均 `(x,z)` を使うことを `sampling_method` に明記しています。
+- `flow_diagnostics_v2.csv`: 剥離理由とフォールバック率を確認します。
+- `comparison_summary.csv`: 成長率、周波数、fit誤差、別fit窓の結果を比較します。符号が窓依存なら `INCONCLUSIVE_WINDOW_DEPENDENT` です。
+- `perturbation_energy*.csv`: 平衡差分仕事と収支です。仕事は出力間隔ではなく内部dtで累積し、擾乱注入ステップを除外します。SI整合を確認するまではJ/Wではなく generalized units と解釈します。
+
+`hypothesis_report.md` はH1〜H5に必要な比較を案内します。接触除外で発振しても
+正式モデルへ直ちに採用せず、形状・境界・接触探索の妥当性を確認してください。
+固定節点IDファイル（0始まりVTU点ID）を指定すると
+`fixed_boundary_mode_audit.csv` に各モードの固定節点最大値と全体最大値の比を
+出力します。

@@ -13,6 +13,7 @@
 #include <queue>
 #include <limits>
 #include <numeric>
+#include <filesystem>
 
 inline bool isSamePointRounded(double x1, double y1, double z1,
                                double x2, double y2, double z2,
@@ -541,7 +542,8 @@ void Geometry::surfExtract(const std::string &surfaceFile, int nsurfz_param) {
         }
     }
 
-    std::ofstream ofs("../output/surfp_output.csv");
+    std::filesystem::create_directories("../output/csv");
+    std::ofstream ofs("../output/csv/surfp_output.csv");
     if (!ofs) {
         std::cerr << "Failed to open surfp_output.csv for writing.\n";
         return;
@@ -682,7 +684,8 @@ void Geometry::surfArea() {
         }
     }
 
-    std::ofstream fsA("../output/SurfArea.dat");
+    std::filesystem::create_directories("../output/dat");
+    std::ofstream fsA("../output/dat/SurfArea.dat");
     
     for (int i = 1; i < nxsup-1; i++){
         for (int j = 1; j < nsurfz-1; ++j){
@@ -1226,7 +1229,8 @@ const double tolZAssign  = 1.0e-2;  // 既存節点をzレベルに割り当て�
     // ------------------------
     // 11. CSV出力
     // ------------------------
-    std::ofstream ofs("../output/surfp_output.csv");
+    std::filesystem::create_directories("../output/csv");
+    std::ofstream ofs("../output/csv/surfp_output.csv");
     if (!ofs) {
         std::cerr << "Failed to open surfp_output.csv for writing.\n";
         return;

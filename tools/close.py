@@ -3,7 +3,7 @@ from scipy.fft import fft, fftfreq
 import matplotlib.pyplot as plt
 
 # --- 1. データの読み込み ---
-harea = np.loadtxt("../output/airflow_vt.dat")
+harea = np.loadtxt("../output/dat/airflow_vt.dat")
 areas = harea[:, 1:]
 
 # --- 2. 最小断面積の時系列 ---

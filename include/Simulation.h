@@ -19,6 +19,7 @@ public:
     ForceCalculator fCalc;
     TimeIntegrator integrator;
     fs::path runDir;
+    fs::path vtuResultDir;
     std::vector<double> omegaL;
     std::vector<double> omegaR;
 

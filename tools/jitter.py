@@ -5,7 +5,7 @@ import numpy as np
 # t: 各サンプルの時間（秒）
 # 例: t = labels * 1e-5
 
-harea = np.loadtxt("../output/area.dat")
+harea = np.loadtxt("../output/dat/area.dat")
 labels = harea[:, 0]
 values = harea[:, 1:]
 

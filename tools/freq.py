@@ -4,7 +4,7 @@ from scipy.signal import find_peaks, butter, filtfilt
 from scipy.fft import fft, fftfreq
 
 # 1. データ読み込み
-harea = np.loadtxt("../output/area.dat")
+harea = np.loadtxt("../output/dat/area.dat")
 labels = harea[:, 0]
 values = harea[:, 1:]
 
@@ -12,7 +12,7 @@ x = labels * 1e-5  # 秒
 row_min = np.min(values, axis=1)
 
 t_start = 0.1
-t_end   = 0.25
+t_end   = 0.2
 idx = np.where((x >= t_start) & (x <= t_end))[0]
 
 x_seg = x[idx]

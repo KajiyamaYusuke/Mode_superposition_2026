@@ -18,6 +18,8 @@ public:
     const std::vector<double>& area() const { return area_; }
     double flowRate() const { return currentUg_; }
     double glottalPressure() const { return currentPg_; }
+    double rampRatio() const { return rampRatio_; }
+    double lungPressure() const { return lungPressure_; }
     const std::vector<double>& upstreamPressure() const { return Pu_; }
     const std::vector<double>& downstreamPressure() const { return Pd_; }
     double outletPressure() const { return Pd_.empty() ? 0.0 : Pd_.back(); }
@@ -35,6 +37,7 @@ private:
     double La_ = 0.0, Ca_ = 0.0, Lr_ = 0.0, Rr_ = 0.0;
     bool hasVocalTract_ = false;
     double previousUg_ = 0.0, currentUg_ = 0.0, currentPg_ = 0.0;
+    double rampRatio_ = 0.0, lungPressure_ = 0.0;
     std::vector<double> Ug_, minAreaHistory_, Uu_, Pu_, Ud_, Pd_;
     std::vector<double> psurf_, area_;
 };

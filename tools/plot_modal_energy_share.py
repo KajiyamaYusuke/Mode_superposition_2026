@@ -9,6 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from output_layout import output_path, result_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -122,7 +123,7 @@ def main() -> None:
     if args.top_count < 1:
         raise ValueError("--top-count must be at least 1")
     run_dir = args.run_dir.resolve()
-    source = run_dir / "modal_contribution.csv"
+    source = result_path(run_dir, "modal_contribution.csv")
     if not source.is_file():
         raise FileNotFoundError(
             f"{source} is missing; run the simulation with modal output enabled"
@@ -132,13 +133,15 @@ def main() -> None:
         pd.read_csv(source), args.start_time, args.end_time
     )
     summary = summarize_modes(energy)
-    energy.to_csv(run_dir / "modal_energy_share_timeseries.csv", index=False)
-    summary.to_csv(run_dir / "modal_energy_share_summary.csv", index=False)
-    output = run_dir / "figures" / "modal_energy_share_top5.png"
+    energy_path = output_path(run_dir, "modal_energy_share_timeseries.csv")
+    summary_path = output_path(run_dir, "modal_energy_share_summary.csv")
+    energy.to_csv(energy_path, index=False)
+    summary.to_csv(summary_path, index=False)
+    output = output_path(run_dir, "modal_energy_share_top5.png")
     plot_energy_share(energy, summary, args.top_count, output)
     print(f"Wrote {output}")
-    print(f"Wrote {run_dir / 'modal_energy_share_timeseries.csv'}")
-    print(f"Wrote {run_dir / 'modal_energy_share_summary.csv'}")
+    print(f"Wrote {energy_path}")
+    print(f"Wrote {summary_path}")
     if args.show:
         plt.show()
     else:

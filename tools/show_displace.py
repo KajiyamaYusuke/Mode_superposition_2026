@@ -12,8 +12,8 @@ plt.style.use(['science', 'ieee', 'no-latex'])
 # =========================
 EXECUTABLE = "../build/simulation"  
 PARAM_FILE = "../input/param.txt"     
-OUTPUT_DATA = "../output/airflow_vt.dat"  
-DISP_DATA = "../output/displace.dat"  # ★追加：変位データ
+OUTPUT_DATA = "../output/dat/airflow_vt.dat"
+DISP_DATA = "../output/dat/displace.dat"
 
 
 # 解析設定
@@ -21,8 +21,8 @@ sim_dt = 1.0e-5
 output_interval = 5  
 dt = sim_dt * output_interval
 fs = 1.0 / dt
-t_start = 0.05
-t_end   = 0.5
+t_start = 0.15
+t_end   = 0.2
 flow_plot_start = 0.05
 flow_plot_end = 0.1
 pressure_val = 500
@@ -42,7 +42,7 @@ def save_displacement_waveform(pressure_val, steady_time, steady_x1l, steady_x1r
 
     plt.tight_layout()
 
-    save_filename = f"../output/displacement_Ps_{pressure_val}Pa2.png"
+    save_filename = f"../output/png/displacement_Ps_{pressure_val}Pa2.png"
     plt.savefig(save_filename, dpi=300)
     plt.close()
     print(f"[出力完了] 声帯変位波形を保存しました: {save_filename}")
@@ -85,7 +85,7 @@ Sxx_linear = np.sqrt(Sxx)
 max_Sxx = np.max(Sxx_linear) if np.max(Sxx_linear) > 0 else 1.0
 Sxx_db = 20 * np.log10(Sxx_linear / max_Sxx + 1e-12)
 
-zoom_start = max(0, len(valid_time) - int(0.05 / dt)) # 最後の0.05秒間で解析
+zoom_start = max(0, len(valid_time) - int(0.5 / dt)) # 最後の0.05秒間で解析
 steady_time = valid_time[zoom_start:]
 steady_flow = valid_flow[zoom_start:]
 steady_x1l  = valid_x1l[zoom_start:]
