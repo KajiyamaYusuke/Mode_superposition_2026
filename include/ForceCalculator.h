@@ -1,7 +1,5 @@
 
 #pragma once
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -29,7 +27,6 @@ private:
     SurfaceLoad surfaceLoad;
     ModalProjector modalProjector;
     FlowModel flowModel;
-    std::filesystem::path outputDirectory_ = "../output";
     int lastSeparationIndex_ = -1;
     double lastSeparationX_ = std::numeric_limits<double>::quiet_NaN();
     double lastBlendEndX_ = std::numeric_limits<double>::quiet_NaN();
@@ -46,12 +43,8 @@ public:
     void updateChannelSections();
     void applyFluidLoads(double t, int n);
     void projectLoadsToModes();
-    void projectFluidLoadsToModes();
     void applyContactLoads(int step = -1, int contactIter = -1,
                            bool diagnosticOnly = false);
-    void setContactMonitor(int surfaceI, int surfaceJ);
-    void setOutputDirectory(const std::filesystem::path& directory);
-    const std::filesystem::path& outputDirectory() const { return outputDirectory_; }
     double sectionX(int index) const {
         return (index >= 0 && index < static_cast<int>(sections.x.size()))
             ? sections.x[index] : std::numeric_limits<double>::quiet_NaN();
@@ -69,12 +62,6 @@ public:
     double separationTargetArea() const { return lastSeparationSelection_.targetAreaMm2; }
     double separationArea() const { return lastSeparationSelection_.sepAreaMm2; }
     bool separationUsedFallback() const { return lastSeparationSelection_.usedFallback; }
-    const std::string& separationReason() const { return lastSeparationSelection_.reason; }
-    double rampRatio() const { return flowModel.rampRatio(); }
-    double lungPressure() const { return flowModel.lungPressure(); }
-    double downstreamPressure() const { return lastDownstreamPressure_; }
-    int pressureRecoveryClampCount() const { return lastPressureRecoveryClampCount_; }
-    bool flowHasNonfinite() const { return lastFlowHasNonfinite_; }
 
     // Compatibility-facing views.  Storage is owned by the focused components
     // below; retaining these names keeps the contact solver isolated during the
@@ -83,19 +70,11 @@ public:
     std::vector<std::vector<double>>& fyL;
     std::vector<std::vector<double>>& fzL;
     std::vector<double> fiL;                // 左のモード力
-    std::vector<double> fiFluidL;           // contact-free fluid modal force
-    std::vector<double> fiContactLowL, fiContactHighL, fiContactInteriorL;
-    std::vector<double> fiContactComputedLowL, fiContactComputedHighL,
-                        fiContactComputedInteriorL;
 
     std::vector<std::vector<double>>& fxR;
     std::vector<std::vector<double>>& fyR;
     std::vector<std::vector<double>>& fzR;
     std::vector<double> fiR;                // 右のモード力
-    std::vector<double> fiFluidR;           // contact-free fluid modal force
-    std::vector<double> fiContactLowR, fiContactHighR, fiContactInteriorR;
-    std::vector<double> fiContactComputedLowR, fiContactComputedHighR,
-                        fiContactComputedInteriorR;
 
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
@@ -128,14 +107,6 @@ public:
     // Local constants used only by wall-pressure reconstruction.  Acoustic
     // circuit state itself is owned exclusively by FlowModel.
     double rho = 0.0, mu = 0.0, lg = 0.0;
-    std::ofstream contactDebugFile;
-    std::ofstream contactIterationFile;
-    std::ofstream contactFinalStateFile;
-    std::ofstream contactRegionSummaryFile;
-    std::ofstream contactPairsDetailFile;
-    std::ofstream flowDebugFile;
-    int contactMonitorI = -1;
-    int contactMonitorJ = -1;
     // Candidate pairs from the first contact iteration of the current time
     // step.  Reusing them in later iterations avoids repeated broad-phase
     // searches while retaining a full search at every new time step.
@@ -150,10 +121,6 @@ public:
     const SimulationParams& sp;
     int nxsup;
     double previous_contact_penetration_ = 0.0;
-    double lastDownstreamPressure_ = 0.0;
-    int lastPressureRecoveryClampCount_ = 0;
-    bool lastFlowHasNonfinite_ = false;
 
     double findMinHarea() const;
-    int findNsep(double minH) const;
 };

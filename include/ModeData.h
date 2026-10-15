@@ -28,10 +28,5 @@ public:
     // テキストから周波数・ダンピングを読み込む
     void loadFreqDamping(const std::string& filename);
 
-    // 統合メソッド
-    void loadAll(const std::string& vtuFile, const std::string& freqFile, const Geometry& geom) {
-        loadFromVTU(vtuFile, geom);
-        loadFreqDamping(freqFile);
-    }
     void normalizeModes(double mass, const Geometry& geom);
 };

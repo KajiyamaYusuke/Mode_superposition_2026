@@ -28,11 +28,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (params.apContactDiagnosticEnabled
-        || params.apContactAnalysisRowsPerEnd != 3
-        || params.apContactExcludedRowsPerEnd != 0
-        || params.diagnosticLoadMode != "live"
-        || params.diagnosticReferenceWindowStartSec != 0.15
-        || params.diagnosticReferenceWindowEndSec != 0.19) {
+        || params.apContactExcludedRowsPerEnd != 0) {
         std::cerr << "AP contact diagnostic defaults were not parsed correctly\n";
         return 1;
     }

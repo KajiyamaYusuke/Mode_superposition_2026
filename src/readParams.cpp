@@ -150,46 +150,16 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
                     pressureRampTimeSec = parseDoubleStrict(rhs, key);
                     pressureRampTimeSecExplicit = true;
                 }
-                else if (key == "diagnosticoutputintervalsteps") {
-                    diagnosticOutputIntervalSteps = parseIntStrict(rhs, key);
-                }
-                else if (key == "perturbationenabled") {
-                    const int enabled = parseIntStrict(rhs, key);
-                    if (enabled != 0 && enabled != 1) {
-                        throw std::runtime_error("perturbationEnabled must be 0 or 1");
-                    }
-                    perturbationEnabled = enabled != 0;
-                }
-                else if (key == "perturbationtimesec") perturbationTimeSec = parseDoubleStrict(rhs, key);
-                else if (key == "perturbationmodeindex") perturbationModeIndex = parseIntStrict(rhs, key);
-                else if (key == "perturbationamplitudeatprobemm") {
-                    perturbationAmplitudeAtProbeMm = parseDoubleStrict(rhs, key);
-                }
-                else if (key == "perturbationpattern") perturbationPattern = toLower(rhs);
                 else if (key == "apcontactdiagnosticenabled") {
                     const int enabled = parseIntStrict(rhs, key);
                     if (enabled != 0 && enabled != 1)
                         throw std::runtime_error("apContactDiagnosticEnabled must be 0 or 1");
                     apContactDiagnosticEnabled = enabled != 0;
                 }
-                else if (key == "apcontactanalysisrowsperend")
-                    apContactAnalysisRowsPerEnd = parseIntStrict(rhs, key);
-                else if (key == "apcontactanalysisdistancemm")
-                    apContactAnalysisDistanceMm = parseDoubleStrict(rhs, key);
                 else if (key == "apcontactexcludedrowsperend")
                     apContactExcludedRowsPerEnd = parseIntStrict(rhs, key);
                 else if (key == "apcontactexcludeddistancemm")
                     apContactExcludedDistanceMm = parseDoubleStrict(rhs, key);
-                else if (key == "contactdetailstartsec")
-                    contactDetailStartSec = parseDoubleStrict(rhs, key);
-                else if (key == "contactdetailendsec")
-                    contactDetailEndSec = parseDoubleStrict(rhs, key);
-                else if (key == "diagnosticloadmode") diagnosticLoadMode = toLower(rhs);
-                else if (key == "diagnosticreferencewindowstartsec")
-                    diagnosticReferenceWindowStartSec = parseDoubleStrict(rhs, key);
-                else if (key == "diagnosticreferencewindowendsec")
-                    diagnosticReferenceWindowEndSec = parseDoubleStrict(rhs, key);
-                else if (key == "fixednodeidsfile") fixedNodeIdsFile = rhs;
                 else throw std::runtime_error("unknown named parameter: " + key);
             }
         }
@@ -266,66 +236,17 @@ bool SimulationParams::validate(std::string& err) const {
         err = "pressureRampTimeSec must be finite and > 0";
         return false;
     }
-    if (diagnosticOutputIntervalSteps <= 0) {
-        err = "diagnosticOutputIntervalSteps must be > 0";
-        return false;
-    }
-    if (!std::isfinite(perturbationTimeSec) || perturbationTimeSec < 0.0) {
-        err = "perturbationTimeSec must be finite and >= 0";
-        return false;
-    }
-    if (perturbationModeIndex < 1 || perturbationModeIndex > nmode) {
-        err = "perturbationModeIndex must be between 1 and nmode";
-        return false;
-    }
-    if (!std::isfinite(perturbationAmplitudeAtProbeMm)
-        || perturbationAmplitudeAtProbeMm < 0.0) {
-        err = "perturbationAmplitudeAtProbeMm must be finite and >= 0";
-        return false;
-    }
-    if (perturbationPattern != "symmetric_opening") {
-        err = "perturbationPattern must be symmetric_opening";
-        return false;
-    }
-    if (apContactAnalysisRowsPerEnd < 0 || apContactExcludedRowsPerEnd < 0) {
+    if (apContactExcludedRowsPerEnd < 0) {
         err = "AP contact row counts must be >= 0";
         return false;
     }
-    if (!std::isfinite(apContactAnalysisDistanceMm)
-        || !std::isfinite(apContactExcludedDistanceMm)
-        || apContactAnalysisDistanceMm < 0.0
+    if (!std::isfinite(apContactExcludedDistanceMm)
         || apContactExcludedDistanceMm < 0.0) {
         err = "AP contact distances must be finite and >= 0";
         return false;
     }
-    if (apContactAnalysisRowsPerEnd > 0 && apContactAnalysisDistanceMm > 0.0) {
-        err = "set only one of apContactAnalysisRowsPerEnd and apContactAnalysisDistanceMm";
-        return false;
-    }
     if (apContactExcludedRowsPerEnd > 0 && apContactExcludedDistanceMm > 0.0) {
         err = "set only one of apContactExcludedRowsPerEnd and apContactExcludedDistanceMm";
-        return false;
-    }
-    if ((contactDetailStartSec < 0.0) != (contactDetailEndSec < 0.0)
-        || (contactDetailStartSec >= 0.0 && contactDetailEndSec < contactDetailStartSec)) {
-        err = "contact detail interval must be disabled with two negative values or have end >= start";
-        return false;
-    }
-    if (diagnosticLoadMode != "live" && diagnosticLoadMode != "freeze_contact"
-        && diagnosticLoadMode != "freeze_fluid" && diagnosticLoadMode != "freeze_all") {
-        err = "diagnosticLoadMode must be live, freeze_contact, freeze_fluid, or freeze_all";
-        return false;
-    }
-    if (!std::isfinite(diagnosticReferenceWindowStartSec)
-        || !std::isfinite(diagnosticReferenceWindowEndSec)
-        || diagnosticReferenceWindowStartSec < 0.0
-        || diagnosticReferenceWindowEndSec <= diagnosticReferenceWindowStartSec) {
-        err = "diagnostic reference window must be finite with 0 <= start < end";
-        return false;
-    }
-    if (diagnosticLoadMode != "live"
-        && diagnosticReferenceWindowEndSec > perturbationTimeSec) {
-        err = "diagnostic reference window must end no later than perturbationTimeSec for frozen loads";
         return false;
     }
     if (leftFrequencyFile.empty() || rightFrequencyFile.empty()
@@ -370,25 +291,9 @@ void SimulationParams::print(std::ostream& os) const {
     os << "  initialGapMm = " << initialGapMm << " [mm]\n";
     os << "  pressureRampTimeSec = " << pressureRampTimeSec
        << (pressureRampTimeSecExplicit ? " [s] (explicit)\n" : " [s] (legacy omitted option)\n");
-    os << "  diagnosticOutputIntervalSteps = " << diagnosticOutputIntervalSteps << "\n";
-    os << "  perturbationEnabled = " << perturbationEnabled << "\n";
-    os << "  perturbationTimeSec = " << perturbationTimeSec << " [s]\n";
-    os << "  perturbationModeIndex = " << perturbationModeIndex << "\n";
-    os << "  perturbationAmplitudeAtProbeMm = "
-       << perturbationAmplitudeAtProbeMm << " [mm]\n";
-    os << "  perturbationPattern = " << perturbationPattern << "\n";
     os << "  apContactDiagnosticEnabled = " << apContactDiagnosticEnabled << "\n";
-    os << "  apContactAnalysisRowsPerEnd = " << apContactAnalysisRowsPerEnd << "\n";
-    os << "  apContactAnalysisDistanceMm = " << apContactAnalysisDistanceMm << " [mm]\n";
     os << "  apContactExcludedRowsPerEnd = " << apContactExcludedRowsPerEnd << "\n";
     os << "  apContactExcludedDistanceMm = " << apContactExcludedDistanceMm << " [mm]\n";
-    os << "  contactDetailIntervalSec = [" << contactDetailStartSec << ", "
-       << contactDetailEndSec << "]\n";
-    os << "  diagnosticLoadMode = " << diagnosticLoadMode << "\n";
-    os << "  diagnosticReferenceWindowSec = ["
-       << diagnosticReferenceWindowStartSec << ", "
-       << diagnosticReferenceWindowEndSec << "]\n";
-    os << "  fixedNodeIdsFile = " << fixedNodeIdsFile.string() << "\n";
     os << "  ps      = " << ps << " [Pa]\n";
     os << "  rho     = " << rho << " [kg/m^3]\n";
     os << "  mu      = " << mu << " [Pa·s]\n";

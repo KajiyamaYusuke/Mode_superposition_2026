@@ -4,13 +4,9 @@
 #include <iostream>
 #include <algorithm>
 #include <sstream>
-#include <fstream>
 #include <cmath>
-#include <filesystem>
-#include <iomanip>
 #include <limits>
 #include <chrono>
-#include <array>
 
 
 #ifndef PROFILE_CALCDIS_EVERY
@@ -27,12 +23,6 @@ ForceCalculator::ForceCalculator(const Geometry& geomL_, const Geometry& geomR_,
       fxR(surfaceLoad.fxR), fyR(surfaceLoad.fyR), fzR(surfaceLoad.fzR),
       harea(sections.area) {}
 
-void ForceCalculator::setOutputDirectory(const std::filesystem::path& directory) {
-    outputDirectory_ = directory;
-    std::filesystem::create_directories(outputDirectory_);
-    std::filesystem::create_directories(outputDirectory_ / "csv");
-    std::filesystem::create_directories(outputDirectory_ / "txt");
-}
 
 
 void ForceCalculator::initialize() {
@@ -48,23 +38,9 @@ void ForceCalculator::initialize() {
     // --- 左声帯 (L) の変数初期化 ---
     surfaceLoad.resize(geomL, geomR);
     fiL.assign(nModes_L, 0.0);
-    fiFluidL.assign(nModes_L, 0.0);
-    fiContactLowL.assign(nModes_L, 0.0);
-    fiContactHighL.assign(nModes_L, 0.0);
-    fiContactInteriorL.assign(nModes_L, 0.0);
-    fiContactComputedLowL.assign(nModes_L, 0.0);
-    fiContactComputedHighL.assign(nModes_L, 0.0);
-    fiContactComputedInteriorL.assign(nModes_L, 0.0);
 
     // --- 右声帯 (R) の変数初期化 ---
     fiR.assign(nModes_R, 0.0);
-    fiFluidR.assign(nModes_R, 0.0);
-    fiContactLowR.assign(nModes_R, 0.0);
-    fiContactHighR.assign(nModes_R, 0.0);
-    fiContactInteriorR.assign(nModes_R, 0.0);
-    fiContactComputedLowR.assign(nModes_R, 0.0);
-    fiContactComputedHighR.assign(nModes_R, 0.0);
-    fiContactComputedInteriorR.assign(nModes_R, 0.0);
 
     // --- 内部バッファ (流路断面数は左右で共通と仮定) ---
     nxsup = geomL.nxsup;
@@ -108,71 +84,6 @@ void ForceCalculator::initialize() {
     contactForceR_ij.resize(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
 
-    contactDebugFile.open(outputDirectory_ / "csv" / "contact_debug.csv", std::ios::trunc);
-    if (contactDebugFile) {
-        contactDebugFile
-            << "step,iter,contacts,attractive_contacts,nonfinite_contacts,"
-            << "max_pen_m,max_abs_pen_dot,max_contact_pressure,max_force,"
-            << "min_sep_dot_norm,worst_iL,worst_iR,worst_j,worst_nx,worst_ny,"
-            << "worst_FxL,worst_FyL,worst_gapC,worst_gapPrev,"
-            << "sumContactL,sumContactR,"
-            << "maxContactL,maxContactIL,maxContactJL,"
-            << "maxContactR,maxContactIR,maxContactJR\n";
-    }
-
-    contactIterationFile.open(outputDirectory_ / "csv" / "contact_iteration_debug.csv", std::ios::trunc);
-    if (contactIterationFile) {
-        contactIterationFile
-            << "step,time,contact_iter,contact_pairs,"
-            << "max_pen_m,max_pen_iL,max_pen_iR,max_pen_j,"
-            << "x_contact_mm,gap_a_mm,gap_b_mm,gap_c_mm,"
-            << "closing_speed_mps,contact_pressure_pa,contact_force_N,"
-            << "sum_contact_L_N,sum_contact_R_N,"
-            << "max_contact_L_N,max_contact_R_N,"
-            << "kc1,kc2,kc3,contact_reference_frequency_hz,"
-            << "nx,ny,normal_separation_alignment,"
-            << "contact_flag,max_force_diff,force_residual,penetration_residual_m\n";
-    }
-
-    contactFinalStateFile.open(outputDirectory_ / "csv" / "contact_final_state.csv", std::ios::trunc);
-    if (contactFinalStateFile) {
-        contactFinalStateFile
-            << "step,time,contact_pairs,max_pen_m,contact_pressure_pa,contact_force_N,"
-            << "sum_contact_L_N,sum_contact_R_N,max_contact_L_N,max_contact_R_N\n";
-    }
-
-    if (sp.apContactDiagnosticEnabled) {
-        contactRegionSummaryFile.open(
-            outputDirectory_ / "csv" / "contact_region_summary.csv", std::ios::trunc);
-        contactRegionSummaryFile
-            << "step,time_s,region,candidate_pair_count,penetrating_pair_count,"
-            << "active_force_pair_count,max_penetration_mm,max_contact_pressure_pa,"
-            << "sum_pair_force_magnitude_n,resultant_force_x_n,resultant_force_y_n,"
-            << "min_signed_gap_mm,negative_gap_fraction,negative_gap_fraction_basis\n";
-        contactPairsDetailFile.open(
-            outputDirectory_ / "csv" / "contact_pairs_detail.csv", std::ios::trunc);
-        contactPairsDetailFile
-            << "step,time_s,region,left_node0_id,left_node1_id,right_node0_id,right_node1_id,"
-            << "left_i,right_i,ap_j_0based,x_mm,z_left_mm,z_right_mm,gap_y_mm,"
-            << "normal_x,normal_y,normal_gap_mm,penetration_mm,contact_pressure_pa,"
-            << "pair_force_n,force_x_left_n,force_y_left_n,excluded\n";
-    }
-
-    flowDebugFile.open(outputDirectory_ / "csv" / "debug_flow_detail.csv", std::ios::trunc);
-    if (flowDebugFile) {
-        flowDebugFile
-            << "step,time,"
-            << "minA_mm2,minA_m2,"
-            << "previousUg,currentUg,dUg,"
-            << "currentPg,"
-            << "PuLast,PuGlot,Pd0,Pd9,"
-            << "sep_index,"
-            << "maxAbsPsurf,idxMaxAbsPsurf,"
-            << "psurf0,pressureAtMinArea,psurfLast,"
-            << "pressure_recovery_clamps,first_clamp_index,first_clamp_delta_pa,"
-            << "hasNonFinite\n";
-    }
-    
     std::cout << "[ForceCalculator] initialized (Asymmetric): "
               << "nModesL=" << nModes_L << ", nModesR=" << nModes_R
               << ", nxsup=" << nxsup 
@@ -187,12 +98,6 @@ void ForceCalculator::initialize() {
               << std::endl;
 }
 
-void ForceCalculator::setContactMonitor(int surfaceI, int surfaceJ) {
-    contactMonitorI = surfaceI;
-    contactMonitorJ = surfaceJ;
-    std::cout << "[Contact] monitor surface point set to (i,j)= ("
-              << contactMonitorI << ", " << contactMonitorJ << ")\n";
-}
 
 void ForceCalculator::applyFluidLoads(double t, int n) {
     // 左右で共通の分割数を使用
@@ -263,37 +168,11 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
 
         Ug[n] = currentUg;
 
-        //[DEBUG]
-        auto maxAbsWithIndex = [](const std::vector<double>& v) {
-            double maxAbs = 0.0;
-            int imax = -1;
-            bool bad = false;
-
-            for (int i = 0; i < static_cast<int>(v.size()); ++i) {
-                double x = v[i];
-                if (!std::isfinite(x)) {
-                    return std::tuple<double,int,bool>(
-                        std::numeric_limits<double>::infinity(), i, true
-                    );
-                }
-                if (std::abs(x) > maxAbs) {
-                    maxAbs = std::abs(x);
-                    imax = i;
-                }
-            }
-            return std::tuple<double,int,bool>(maxAbs, imax, bad);
-        };
-
         // Construct the pressure only up to the physical separation plane.
         // Downstream loading is mapped with a smooth physical-x blend below.
         const int sepIndex = std::clamp(selectedIndex, 0, nFlowSections - 1);
         const auto& tractPressure = flowModel.downstreamPressure();
         const double downstreamPressure = tractPressure.empty() ? 0.0 : tractPressure.front();
-        int pressureRecoveryClampCount = 0;
-        int firstPressureRecoveryClampIndex = -1;
-        double firstPressureRecoveryDelta = 0.0;
-        lastDownstreamPressure_ = downstreamPressure;
-
         // psurf 計算
         std::fill(psurf.begin(), psurf.end(), 0.0);
         psurf[0] = currentPg;
@@ -325,47 +204,11 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
                     // constriction must not leave zero-filled stations behind.
                     // Keep the last attached-flow value through xSep; the
                     // physical-x downstream blend handles the separation.
-                    ++pressureRecoveryClampCount;
-                    if (firstPressureRecoveryClampIndex < 0) {
-                        firstPressureRecoveryClampIndex = i;
-                        firstPressureRecoveryDelta = psurf[i] - psurf[i - 1];
-                    }
                     psurf[i] = psurf[i - 1];
                     for (int k = i + 1; k <= sepIndex; ++k) psurf[k] = psurf[i];
                     break;
                 }
 
-                //[DEBUG]
-                if (n % 10 == 0 || t > 0.12) {
-                    if (!std::isfinite(dx) ||
-                        !std::isfinite(g3) ||
-                        !std::isfinite(h_prev) ||
-                        !std::isfinite(h_curr) ||
-                        !std::isfinite(Ugm) ||
-                        !std::isfinite(bernoulli_term) ||
-                        !std::isfinite(viscous_term) ||
-                        !std::isfinite(psurf[i]) ||
-                        std::abs(psurf[i]) > 1.0e8) {
-
-                        if (flowDebugFile) {
-                            flowDebugFile << std::scientific << std::setprecision(12)
-                                        << "#BAD_PSURF,"
-                                        << "step=" << n
-                                        << ",time=" << t
-                                        << ",i=" << i
-                                        << ",dx=" << dx
-                                        << ",G3=" << g3
-                                        << ",h_prev=" << h_prev
-                                        << ",h_curr=" << h_curr
-                                        << ",Ugm=" << Ugm
-                                        << ",bernoulli=" << bernoulli_term
-                                        << ",viscous=" << viscous_term
-                                        << ",psurf_prev=" << psurf[i-1]
-                                        << ",psurf=" << psurf[i]
-                                        << "\n";
-                        }
-                    }
-                }
             }
         } else {
             for (int i = 1; i < sepIndex; ++i) psurf[i] = currentPg;
@@ -525,48 +368,6 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
             }
         }
 
-        // Log only after psurf and the surface mapping have both been built.
-        // Every value in one CSV row now refers to this same fluid update.
-        if (flowDebugFile && (n % 10 == 0 || t > 0.12)) {
-            auto [maxPsurfAbs, idxMaxPsurf, badPsurf] = maxAbsWithIndex(psurf);
-            int minAreaIndex = -1;
-            double diagnosticMinArea = std::numeric_limits<double>::infinity();
-            for (int index = 1; index + 1 < static_cast<int>(harea.size()); ++index) {
-                if (harea[index] < diagnosticMinArea) {
-                    diagnosticMinArea = harea[index];
-                    minAreaIndex = index;
-                }
-            }
-            const auto& modelPu = flowModel.upstreamPressure();
-            const auto& modelPd = flowModel.downstreamPressure();
-            const bool hasBad = !std::isfinite(minA) || !std::isfinite(previousUg)
-                || !std::isfinite(currentUg) || !std::isfinite(currentPg) || badPsurf;
-            const int Nsecg = sp.N_sub;
-            flowDebugFile << std::scientific << std::setprecision(12)
-                << n << "," << t << "," << minA << "," << minA * 1.0e-6 << ","
-                << previousUg << "," << currentUg << "," << currentUg - previousUg << ","
-                << currentPg << ","
-                << (Nsecg >= 0 && Nsecg < static_cast<int>(modelPu.size()) ? modelPu[Nsecg] : 0.0) << ","
-                << (Nsecg + 1 < static_cast<int>(modelPu.size()) ? modelPu[Nsecg + 1] : 0.0) << ","
-                << (modelPd.empty() ? 0.0 : modelPd.front()) << ","
-                << (modelPd.empty() ? 0.0 : modelPd.back()) << ","
-                << sepIndex << "," << maxPsurfAbs << "," << idxMaxPsurf << ","
-                << (psurf.empty() ? 0.0 : psurf.front()) << ","
-                << (minAreaIndex >= 0 ? psurf[minAreaIndex] : 0.0) << ","
-                << (psurf.empty() ? 0.0 : psurf.back()) << ","
-                << pressureRecoveryClampCount << "," << firstPressureRecoveryClampIndex << ","
-                << firstPressureRecoveryDelta << "," << hasBad << "\n";
-        }
-
-        auto [diagnosticMaxPressure, diagnosticMaxIndex, diagnosticBadPressure] =
-            maxAbsWithIndex(psurf);
-        (void)diagnosticMaxPressure;
-        (void)diagnosticMaxIndex;
-        lastPressureRecoveryClampCount_ = pressureRecoveryClampCount;
-        lastFlowHasNonfinite_ = !std::isfinite(minA)
-            || !std::isfinite(previousUg) || !std::isfinite(currentUg)
-            || !std::isfinite(currentPg) || diagnosticBadPressure;
-
     }
     
 
@@ -577,12 +378,6 @@ void ForceCalculator::projectLoadsToModes() {
                            surfaceLoad, fiL, fiR);
 }
 
-void ForceCalculator::projectFluidLoadsToModes() {
-    modalProjector.project(geomL, modeDataL, geomR, modeDataR,
-                           surfaceLoad, fiL, fiR);
-    fiFluidL = fiL;
-    fiFluidR = fiR;
-}
 
 void ForceCalculator::updateChannelSections() {
     sectionBuilder.build(geomL, stateL, geomR, stateR, sections);
@@ -638,61 +433,7 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
     contactFlag = false;
     max_force_diff = 0.0;
 
-    const double time = step * sp.dt;
-
-    const bool debugContact =
-        (time >= 0.120 && time <= 0.135);
-    int debugContactCount = 0;
-    int debugAttractiveContactCount = 0;
-    int debugNonfiniteContactCount = 0;
-    double debugMaxPen = 0.0;
-    double debugMaxAbsPenDot = 0.0;
-    double debugMaxContactPressure = 0.0;
-    double debugMaxForce = 0.0;
-    double debugMinSepDotNorm = std::numeric_limits<double>::infinity();
-    int debugWorstIL = -1;
-    int debugWorstIR = -1;
-    int debugWorstJ = -1;
-    double debugWorstNx = 0.0;
-    double debugWorstNy = 0.0;
-    double debugWorstFxL = 0.0;
-    double debugWorstFyL = 0.0;
-    double debugWorstGapC = 0.0;
-    double debugWorstGapPrev = 0.0;
-    int monitorCandidatePairs = 0;
-    int monitorPenetratingPairs = 0;
-    int candidatePairCount = 0;
-    int cachedCandidateCount = 0;
-    int twoPointerCandidateCount = 0;
-    int fallbackCandidateCount = 0;
-    int contactPairCount = 0;
     double maxPenetration = 0.0;
-    int maxPenIL = -1, maxPenIR = -1, maxPenJ = -1;
-    double maxPenX = std::numeric_limits<double>::quiet_NaN();
-    double maxPenGapA = std::numeric_limits<double>::quiet_NaN();
-    double maxPenGapB = std::numeric_limits<double>::quiet_NaN();
-    double maxPenGapC = std::numeric_limits<double>::quiet_NaN();
-    double maxPenDot = std::numeric_limits<double>::quiet_NaN();
-    double maxPenPressure = std::numeric_limits<double>::quiet_NaN();
-    double maxPenForce = std::numeric_limits<double>::quiet_NaN();
-    double maxPenNx = std::numeric_limits<double>::quiet_NaN();
-    double maxPenNy = std::numeric_limits<double>::quiet_NaN();
-    double maxPenNormalAlignment = std::numeric_limits<double>::quiet_NaN();
-
-    struct RegionStats {
-        long long candidates = 0;
-        long long penetrating = 0;
-        long long active = 0;
-        long long negativeGapSamples = 0;
-        double maxPenMm = 0.0;
-        double maxPressurePa = 0.0;
-        double sumForceN = 0.0;
-        double resultantFxN = 0.0;
-        double resultantFyN = 0.0;
-        double minGapMm = std::numeric_limits<double>::infinity();
-    };
-    std::array<RegionStats, 3> regionStats;
-    const char* regionNames[3] = {"ap_low", "ap_high", "interior"};
 
     double apZMin = std::numeric_limits<double>::infinity();
     double apZMax = -std::numeric_limits<double>::infinity();
@@ -700,16 +441,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
         apZMin = std::min(apZMin, point.z);
         apZMax = std::max(apZMax, point.z);
     }
-    auto regionFor = [&](int j, double zMm) {
-        if (sp.apContactAnalysisDistanceMm > 0.0) {
-            if (zMm <= apZMin + sp.apContactAnalysisDistanceMm) return 0;
-            if (zMm >= apZMax - sp.apContactAnalysisDistanceMm) return 1;
-            return 2;
-        }
-        if (j < sp.apContactAnalysisRowsPerEnd) return 0;
-        if (j >= std::max(0, geomL.nsurfz - sp.apContactAnalysisRowsPerEnd)) return 1;
-        return 2;
-    };
     auto contactIsExcluded = [&](int j, double zMm) {
         if (!sp.apContactDiagnosticEnabled) return false;
         if (sp.apContactExcludedDistanceMm > 0.0) {
@@ -720,15 +451,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
             && (j < sp.apContactExcludedRowsPerEnd
                 || j >= std::max(0, geomL.nsurfz - sp.apContactExcludedRowsPerEnd));
     };
-
-    std::array<std::vector<double>, 3> computedModalL, computedModalR;
-    std::array<std::vector<double>, 3> appliedModalL, appliedModalR;
-    for (int region = 0; region < 3; ++region) {
-        computedModalL[region].assign(modeDataL.nModes, 0.0);
-        computedModalR[region].assign(modeDataR.nModes, 0.0);
-        appliedModalL[region].assign(modeDataL.nModes, 0.0);
-        appliedModalR[region].assign(modeDataR.nModes, 0.0);
-    }
 
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
@@ -838,27 +560,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
             return pR.y - pL.y;
         };
 
-    auto evalPrevAtX =
-        [&](int pidL0, int pidL1,
-            int pidR0, int pidR1,
-            double x,
-            double& sL,
-            double& sR,
-            Pos& pL,
-            Pos& pR) {
-            const double xL0 = stateL.disp[pidL0].ux;
-            const double xL1 = stateL.disp[pidL1].ux;
-            const double xR0 = stateR.disp[pidR0].ux;
-            const double xR1 = stateR.disp[pidR1].ux;
-
-            sL = paramAtX(x, xL0, xL1);
-            sR = paramAtX(x, xR0, xR1);
-
-            pL = interpPos(stateL.disp, pidL0, pidL1, sL);
-            pR = interpPos(stateR.disp, pidR0, pidR1, sR);
-
-            return pR.y - pL.y;
-        };
 
     // ------------------------------------------------------------
     // 2. Negative gap interval and centroid
@@ -1126,14 +827,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
             const double xb = std::min(Lxmax, Rxmax);
 
             if (xb <= xa + EPS_X) return;
-            ++candidatePairCount;
-
-            const bool touchesMonitor =
-                j == contactMonitorJ &&
-                ((iL <= contactMonitorI && contactMonitorI <= iL + 1) ||
-                 (iR <= contactMonitorI && contactMonitorI <= iR + 1));
-            if (touchesMonitor) ++monitorCandidatePairs;
-
             double sLa, sRa, sLb, sRb;
             Pos pLa, pRa, pLb, pRb;
 
@@ -1147,12 +840,6 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
 
             const double pairZMm = 0.25 * (
                 pLa.z + pLb.z + pRa.z + pRb.z);
-            const int region = regionFor(j, pairZMm);
-            auto& stats = regionStats[region];
-            ++stats.candidates;
-            stats.minGapMm = std::min(stats.minGapMm, std::min(gapA, gapB));
-            if (gapA < 0.0 || gapB < 0.0) ++stats.negativeGapSamples;
-
             double xc0, xc1;
             double xContact;
             double penMean_mm;
@@ -1169,38 +856,28 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
                 );
 
             if (!hasPenetration) return;
-            ++stats.penetrating;
-            if (touchesMonitor) ++monitorPenetratingPairs;
 
             double sL, sR;
             Pos pL, pR;
 
-            const double gapC =
-                evalPredAtX(pidL0, pidL1, pidR0, pidR1,
-                            xContact, sL, sR, pL, pR);
+            evalPredAtX(pidL0, pidL1, pidR0, pidR1,
+                        xContact, sL, sR, pL, pR);
 
             double nx = 0.0;
             double ny = 0.0;
             computeXYNormal(pidL0, pidL1, pidR0, pidR1, pL, pR, nx, ny);
 
             // Penetration and its rate use exactly the same normal as the
-            // reaction force.  gapC remains only a diagnostic y-gap.
+            // reaction force.
             const double normalGap = (pR.x - pL.x) * nx + (pR.y - pL.y) * ny;
             const double pen = std::max(0.0, -normalGap) * 1.0e-3;
             if (pen <= 0.0 || !std::isfinite(pen)) return;
-            ++contactPairCount;
 
             if (is_first_contact) {
                 std::cout << "\n=== [DEBUG] FIRST NORMAL CONTACT DETECTED ==="
                           << std::endl;
                 is_first_contact = false;
             }
-
-            double sLprev, sRprev;
-            Pos pLprev, pRprev;
-            const double gapPrev =
-                evalPrevAtX(pidL0, pidL1, pidR0, pidR1,
-                            xContact, sLprev, sRprev, pLprev, pRprev);
 
             const Pos vL = interpVelocity(stateL.vel, pidL0, pidL1, sL);
             const Pos vR = interpVelocity(stateR.vel, pidR0, pidR1, sR);
@@ -1259,105 +936,9 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
             const double FxR =  F * nx;
             const double FyR =  F * ny;
 
-            auto projectPair = [&](std::vector<double>& outL,
-                                   std::vector<double>& outR) {
-                const double wL0 = 1.0 - sL, wL1 = sL;
-                const double wR0 = 1.0 - sR, wR1 = sR;
-                for (int mode = 0; mode < modeDataL.nModes; ++mode) {
-                    const auto& u0 = modeDataL.modes[mode][pidL0];
-                    const auto& u1 = modeDataL.modes[mode][pidL1];
-                    outL[mode] += FxL * (wL0 * u0.ux + wL1 * u1.ux)
-                                + FyL * (wL0 * u0.uy + wL1 * u1.uy);
-                }
-                for (int mode = 0; mode < modeDataR.nModes; ++mode) {
-                    const auto& u0 = modeDataR.modes[mode][pidR0];
-                    const auto& u1 = modeDataR.modes[mode][pidR1];
-                    outR[mode] += FxR * (wR0 * u0.ux + wR1 * u1.ux)
-                                + FyR * (wR0 * u0.uy + wR1 * u1.uy);
-                }
-            };
 
             if (pen > maxPenetration) {
-                const double sepX = pR.x - pL.x;
-                const double sepY = pR.y - pL.y;
-                const double sepLen = norm2(sepX, sepY);
                 maxPenetration = pen;
-                maxPenIL = iL;
-                maxPenIR = iR;
-                maxPenJ = j;
-                maxPenX = xContact;
-                maxPenGapA = gapA;
-                maxPenGapB = gapB;
-                maxPenGapC = gapC;
-                maxPenDot = penDot;
-                maxPenPressure = contact_pressure;
-                maxPenForce = F;
-                maxPenNx = nx;
-                maxPenNy = ny;
-                maxPenNormalAlignment = sepLen > EPS_LEN
-                    ? (nx * sepX + ny * sepY) / sepLen : 0.0;
-            }
-
-            projectPair(computedModalL[region], computedModalR[region]);
-            stats.maxPenMm = std::max(stats.maxPenMm, pen * 1.0e3);
-            stats.maxPressurePa = std::max(stats.maxPressurePa, contact_pressure);
-
-            if (!excluded) {
-                ++stats.active;
-                stats.sumForceN += std::abs(F);
-                stats.resultantFxN += FxL;
-                stats.resultantFyN += FyL;
-                projectPair(appliedModalL[region], appliedModalR[region]);
-            }
-
-            if (diagnosticOnly && contactPairsDetailFile
-                && sp.contactDetailStartSec >= 0.0
-                && time >= sp.contactDetailStartSec
-                && time <= sp.contactDetailEndSec) {
-                contactPairsDetailFile << std::scientific << std::setprecision(15)
-                    << step << "," << time << "," << regionNames[region] << ","
-                    << pidL0 << "," << pidL1 << "," << pidR0 << "," << pidR1 << ","
-                    << iL << "," << iR << "," << j << ","
-                    << xContact << "," << pL.z << "," << pR.z << "," << gapC << ","
-                    << nx << "," << ny << "," << normalGap << "," << pen * 1.0e3 << ","
-                    << contact_pressure << "," << F << "," << FxL << "," << FyL << ","
-                    << static_cast<int>(excluded) << "\n";
-            }
-
-            if (debugContact) {
-                debugContactCount++;
-                debugMaxPen = std::max(debugMaxPen, pen);
-                debugMaxAbsPenDot = std::max(debugMaxAbsPenDot, std::abs(penDot));
-                debugMaxContactPressure =
-                    std::max(debugMaxContactPressure, contact_pressure);
-                debugMaxForce = std::max(debugMaxForce, F);
-
-                const double sepX = pL.x - pR.x;
-                const double sepY = pL.y - pR.y;
-                const double sepLen = std::sqrt(sepX * sepX + sepY * sepY);
-                const double sepDot = FxL * sepX + FyL * sepY;
-                const double sepDotNorm =
-                    sepDot / std::max(F * sepLen, EPS_LEN);
-
-                if (!std::isfinite(sepDotNorm) || !std::isfinite(F)) {
-                    debugNonfiniteContactCount++;
-                } else {
-                    if (sepDotNorm < 0.0) {
-                        debugAttractiveContactCount++;
-                    }
-                    if (sepDotNorm < debugMinSepDotNorm) {
-                        debugMinSepDotNorm = sepDotNorm;
-                        debugWorstIL = iL;
-                        debugWorstIR = iR;
-                        debugWorstJ = j;
-                        debugWorstNx = nx;
-                        debugWorstNy = ny;
-                        debugWorstFxL = FxL;
-                        debugWorstFyL = FyL;
-                        debugWorstGapC = gapC;
-                        debugWorstGapPrev = gapPrev;
-                    }
-                }
             }
 
             if (!excluded) {
@@ -1419,9 +1000,8 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
         for (int k = 0; k < static_cast<int>(segL.size()); ++k) indexL[segL[k].i] = k;
         for (int k = 0; k < static_cast<int>(segR.size()); ++k) indexR[segR[k].i] = k;
 
-        auto runCandidate = [&](const ContactSeg& L, const ContactSeg& R, int& counter) {
+        auto runCandidate = [&](const ContactSeg& L, const ContactSeg& R) {
             if (std::min(L.xmax, R.xmax) <= std::max(L.xmin, R.xmin) + EPS_X) return;
-            ++counter;
             processPair(j, L, R);
 #ifdef PROFILE_CALCDIS
             ++call_process_pairs;
@@ -1436,7 +1016,7 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
                     iR < 0 || iR >= static_cast<int>(indexR.size())) continue;
                 const int l = indexL[iL], r = indexR[iR];
                 if (l < 0 || r < 0) continue;
-                runCandidate(segL[l], segR[r], cachedCandidateCount);
+                runCandidate(segL[l], segR[r]);
             }
             continue;
         }
@@ -1447,7 +1027,7 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
                 const auto& L = segL[l];
                 const auto& R = segR[r];
                 if (std::min(L.xmax, R.xmax) > std::max(L.xmin, R.xmin) + EPS_X) {
-                    runCandidate(L, R, twoPointerCandidateCount);
+                    runCandidate(L, R);
                     if (!diagnosticOnly && contactIter == 1)
                         contactPairCache[j].emplace_back(L.i, R.i);
                 }
@@ -1460,75 +1040,14 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
             // fallback rather than silently missing contact.
             for (const auto& L : segL) for (const auto& R : segR) {
                 if (std::min(L.xmax, R.xmax) <= std::max(L.xmin, R.xmin) + EPS_X) continue;
-                runCandidate(L, R, fallbackCandidateCount);
+                runCandidate(L, R);
                 if (!diagnosticOnly && contactIter == 1)
                     contactPairCache[j].emplace_back(L.i, R.i);
             }
         }
     }
 
-double sumContactL = 0.0;
-double sumContactR = 0.0;
-double maxContactL = 0.0;
-double maxContactR = 0.0;
-int maxContactIL = -1, maxContactJL = -1;
-int maxContactIR = -1, maxContactJR = -1;
-
-for (int i = 0; i < static_cast<int>(contactForceL_ij.size()); ++i) {
-    for (int j = 0; j < static_cast<int>(contactForceL_ij[i].size()); ++j) {
-        double v = contactForceL_ij[i][j];
-        if (std::isfinite(v)) {
-            sumContactL += v;
-            if (v > maxContactL) {
-                maxContactL = v;
-                maxContactIL = i;
-                maxContactJL = j;
-            }
-        }
-    }
-}
-
-for (int i = 0; i < static_cast<int>(contactForceR_ij.size()); ++i) {
-    for (int j = 0; j < static_cast<int>(contactForceR_ij[i].size()); ++j) {
-        double v = contactForceR_ij[i][j];
-        if (std::isfinite(v)) {
-            sumContactR += v;
-            if (v > maxContactR) {
-                maxContactR = v;
-                maxContactIR = i;
-                maxContactJR = j;
-            }
-        }
-    }
-}
-
     if (diagnosticOnly) {
-        if (contactRegionSummaryFile
-            && step % sp.diagnosticOutputIntervalSteps == 0) {
-            for (int region = 0; region < 3; ++region) {
-                const auto& stats = regionStats[region];
-                const double minGap = std::isfinite(stats.minGapMm)
-                    ? stats.minGapMm : std::numeric_limits<double>::quiet_NaN();
-                const double fraction = stats.candidates > 0
-                    ? static_cast<double>(stats.negativeGapSamples)
-                        / static_cast<double>(stats.candidates)
-                    : 0.0;
-                contactRegionSummaryFile << std::scientific << std::setprecision(15)
-                    << step << "," << time << "," << regionNames[region] << ","
-                    << stats.candidates << "," << stats.penetrating << ","
-                    << stats.active << "," << stats.maxPenMm << ","
-                    << stats.maxPressurePa << "," << stats.sumForceN << ","
-                    << stats.resultantFxN << "," << stats.resultantFyN << ","
-                    << minGap << "," << fraction << ",candidate_pair_sample_count\n";
-            }
-        }
-        if (contactFinalStateFile) {
-            contactFinalStateFile << std::scientific << std::setprecision(12)
-                << step << "," << time << "," << contactPairCount << ","
-                << maxPenetration << "," << maxPenPressure << "," << maxPenForce << ","
-                << sumContactL << "," << sumContactR << ","
-                << maxContactL << "," << maxContactR << "\n";
-        }
         contactFlag = savedContactFlag;
         max_force_diff = savedMaxForceDiff;
         contact_force_residual = savedForceResidual;
@@ -1536,51 +1055,6 @@ for (int i = 0; i < static_cast<int>(contactForceR_ij.size()); ++i) {
         max_contact_penetration = savedMaxPen;
         previous_contact_penetration_ = savedPreviousPen;
         return;
-    }
-
-    fiContactComputedLowL = computedModalL[0];
-    fiContactComputedHighL = computedModalL[1];
-    fiContactComputedInteriorL = computedModalL[2];
-    fiContactComputedLowR = computedModalR[0];
-    fiContactComputedHighR = computedModalR[1];
-    fiContactComputedInteriorR = computedModalR[2];
-    fiContactLowL = appliedModalL[0];
-    fiContactHighL = appliedModalL[1];
-    fiContactInteriorL = appliedModalL[2];
-    fiContactLowR = appliedModalR[0];
-    fiContactHighR = appliedModalR[1];
-    fiContactInteriorR = appliedModalR[2];
-
-    if (debugContact && contactDebugFile) {
-        if (!std::isfinite(debugMinSepDotNorm)) {
-            debugMinSepDotNorm = 0.0;
-        }
-        contactDebugFile << step << "," << contactIter << ","
-                         << debugContactCount << ","
-                         << debugAttractiveContactCount << ","
-                         << debugNonfiniteContactCount << ","
-                         << debugMaxPen << ","
-                         << debugMaxAbsPenDot << ","
-                         << debugMaxContactPressure << ","
-                         << debugMaxForce << ","
-                         << debugMinSepDotNorm << ","
-                         << debugWorstIL << ","
-                         << debugWorstIR << ","
-                         << debugWorstJ << ","
-                         << debugWorstNx << ","
-                         << debugWorstNy << ","
-                         << debugWorstFxL << ","
-                         << debugWorstFyL << ","
-                         << debugWorstGapC << ","
-                         << debugWorstGapPrev << ","
-                         << sumContactL << ","
-                         << sumContactR << ","
-                         << maxContactL << ","
-                         << maxContactIL << ","
-                         << maxContactJL << ","
-                         << maxContactR << ","
-                         << maxContactIR << ","
-                         << maxContactJR << "\n";
     }
 
 #ifdef PROFILE_CALCDIS
@@ -1645,22 +1119,6 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
     contact_force_residual = max_force_diff /
         std::max(std::sqrt(contactForceNormSquared), 1.0e-9);
 
-    if (contactIterationFile) {
-        contactIterationFile << std::scientific << std::setprecision(12)
-            << step << "," << time << "," << contactIter << ","
-            << contactPairCount << ","
-            << maxPenetration << ","
-            << maxPenIL << "," << maxPenIR << "," << maxPenJ << ","
-            << maxPenX << "," << maxPenGapA << "," << maxPenGapB << "," << maxPenGapC << ","
-            << maxPenDot << "," << maxPenPressure << "," << maxPenForce << ","
-            << sumContactL << "," << sumContactR << ","
-            << maxContactL << "," << maxContactR << ","
-            << sp.kc1 << "," << sp.kc2 << "," << sp.kc3 << ","
-            << sp.contactReferenceFrequencyHz << ","
-            << maxPenNx << "," << maxPenNy << "," << maxPenNormalAlignment << ","
-            << contactFlag << "," << max_force_diff << ","
-            << contact_force_residual << "," << contact_penetration_residual << "\n";
-    }
 
 
 #ifdef PROFILE_CALCDIS
@@ -1765,16 +1223,6 @@ double ForceCalculator::findMinHarea() const {
     return std::isfinite(minimum) ? minimum : 0.0;
 }
 
-int ForceCalculator::findNsep(double minH) const {
-    const int nFlowSections = static_cast<int>(harea.size());
-    for (int i = 1; i + 1 < nFlowSections; ++i) {
-        if (sections.valid[i]
-            && (std::fabs(harea[i] - minH) < 1.0e-8 || harea[i] <= 0.0)) {
-            return i + 1;
-        }
-    }
-    return nFlowSections - 1;
-}
 
 
 
@@ -1792,12 +1240,5 @@ void ForceCalculator::resetPreviousContactForce() {
     contact_force_residual = 0.0;
     contact_penetration_residual = 0.0;
     max_contact_penetration = 0.0;
-    for (auto* values : {&fiContactLowL, &fiContactHighL, &fiContactInteriorL,
-                         &fiContactComputedLowL, &fiContactComputedHighL,
-                         &fiContactComputedInteriorL, &fiContactLowR,
-                         &fiContactHighR, &fiContactInteriorR,
-                         &fiContactComputedLowR, &fiContactComputedHighR,
-                         &fiContactComputedInteriorR}) {
-        std::fill(values->begin(), values->end(), 0.0);
-    }
+
 }

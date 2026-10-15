@@ -41,7 +41,6 @@ public:
 
 
     void loadFromVTK(const std::string& filename);
-    void surfExtract(const std::string &surfaceFile, int nsurfz_param);
     void surfExtractFromNAS(const std::string& nasFile, int nsurfl_param, int nsurfz_param);
     void surfArea();
 

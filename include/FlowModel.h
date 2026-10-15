@@ -26,7 +26,6 @@ public:
 
 private:
     void calcFlowStep(double time, double dt, double minArea);
-    int findSeparation(const ChannelSections& sections, double minArea) const;
 
     const SimulationParams* sp_ = nullptr;
     double rho_ = 0.0, mu_ = 0.0;

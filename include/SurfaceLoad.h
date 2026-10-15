@@ -10,5 +10,4 @@ struct SurfaceLoad {
     std::vector<std::vector<double>> fxR, fyR, fzR;
 
     void resize(const Geometry& left, const Geometry& right);
-    void clear();
 };

@@ -59,26 +59,12 @@ struct SimulationParams {
     double initialGapMm = 0.0;
     double pressureRampTimeSec = 0.10;
     bool pressureRampTimeSecExplicit = false;
-    int diagnosticOutputIntervalSteps = 5;
-    bool perturbationEnabled = false;
-    double perturbationTimeSec = 0.20;
-    int perturbationModeIndex = 5;  // user-facing, one-based source mode
-    double perturbationAmplitudeAtProbeMm = 0.001;
-    std::string perturbationPattern = "symmetric_opening";
     // AP-end/contact diagnostics.  AP rows are surface-grid j indices; a
     // positive distance selects rows whose reference z lies within that many
     // millimetres of either end.  Row and distance selectors are exclusive.
     bool apContactDiagnosticEnabled = false;
-    int apContactAnalysisRowsPerEnd = 3;
-    double apContactAnalysisDistanceMm = 0.0;
     int apContactExcludedRowsPerEnd = 0;
     double apContactExcludedDistanceMm = 0.0;
-    double contactDetailStartSec = -1.0;
-    double contactDetailEndSec = -1.0;
-    std::string diagnosticLoadMode = "live";
-    double diagnosticReferenceWindowStartSec = 0.25;
-    double diagnosticReferenceWindowEndSec = 0.30;
-    fs::path fixedNodeIdsFile;
     double ps      = 1325.0; // 静圧 [Pa]
     double rho     = 1.225;    // 密度 [kg/m^3] (空気の初期値)
     double mu      = 1.81e-5;  // 動粘性係数 [Pa·s]（参考値）
