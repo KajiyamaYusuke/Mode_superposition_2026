@@ -428,11 +428,6 @@ void Simulation::run() {
             << "icont_used,contactFlag,max_force_diff,"
             << "diverged\n";
     
-    std::ofstream fmodedbg(csvDir / "debug_mode_summary.csv");
-    fmodedbg << "step,time,icont,stage,"
-            << "maxFiL,imaxFiL,maxFiR,imaxFiR,"
-            << "contactFlag,max_force_diff\n";
-
     //std::ofstream fdbg("../output/debug_fluid.dat");
     //std::ofstream contactIterDbg("../output/contact_iteration_debug.csv");
 
@@ -850,73 +845,6 @@ void Simulation::run() {
         return value;
     };
 
-    auto maxAbsNodeDisp = [](const Geometry& geom, const State& state) {
-        double maxAbs = 0.0;
-        for (int i = 0; i < state.nPoints; ++i) {
-            const double dx = state.predictedDisp[i].ux - geom.points[i].x;
-            const double dy = state.predictedDisp[i].uy - geom.points[i].y;
-            const double dz = state.predictedDisp[i].uz - geom.points[i].z;
-            if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
-                return std::numeric_limits<double>::infinity();
-            }
-            maxAbs = std::max(maxAbs, std::abs(dx));
-            maxAbs = std::max(maxAbs, std::abs(dy));
-            maxAbs = std::max(maxAbs, std::abs(dz));
-        }
-        return maxAbs;
-    };
-
-    auto minMaxIndex = [](const std::vector<double>& v) {
-        double vmin = std::numeric_limits<double>::infinity();
-        double vmax = -std::numeric_limits<double>::infinity();
-        int imin = -1;
-        int imax = -1;
-
-        for (int i = 0; i < static_cast<int>(v.size()); ++i) {
-            double x = v[i];
-            if (!std::isfinite(x)) {
-                return std::tuple<double,double,int,int>(
-                    -std::numeric_limits<double>::infinity(),
-                    std::numeric_limits<double>::infinity(),
-                    i, i
-                );
-            }
-            if (x < vmin) { vmin = x; imin = i; }
-            if (x > vmax) { vmax = x; imax = i; }
-        }
-        return std::tuple<double,double,int,int>(vmin, vmax, imin, imax);
-    };
-
-    auto maxAbsIndex = [](const std::vector<double>& v) {
-        double maxAbs = 0.0;
-        int imax = -1;
-
-        for (int i = 0; i < static_cast<int>(v.size()); ++i) {
-            double x = v[i];
-            if (!std::isfinite(x)) {
-                return std::pair<double,int>(
-                    std::numeric_limits<double>::infinity(), i
-                );
-            }
-            if (std::abs(x) > maxAbs) {
-                maxAbs = std::abs(x);
-                imax = i;
-            }
-        }
-        return std::pair<double,int>(maxAbs, imax);
-    };
-
-    auto maxAbsPsurf = [&]() {
-        double m = 0.0;
-        for (double p : fCalc.psurf) {
-            if (!std::isfinite(p)) {
-                return std::numeric_limits<double>::infinity();
-            }
-            m = std::max(m, std::abs(p));
-        }
-        return m;
-    };
-
     double cumulativeFluidWork = 0.0;
     double cumulativeDampingLoss = 0.0;
     double previousFluidPowerTotal = 0.0;
@@ -1248,20 +1176,6 @@ void Simulation::run() {
                 ? 0.0 : maxAbsDiff(fCalc.fiL, baseFiL);
             const double modalContactDeltaR = baseFiR.empty()
                 ? 0.0 : maxAbsDiff(fCalc.fiR, baseFiR);
-
-            if (n % 10 == 0 || t > 0.12) {
-                auto [maxFiL, imaxFiL] = maxAbsIndex(fCalc.fiL);
-                auto [maxFiR, imaxFiR] = maxAbsIndex(fCalc.fiR);
-
-                fmodedbg << std::scientific << std::setprecision(12)
-                        << n << "," << t << "," << icont << ","
-                        << "after_f2mode,"
-                        << maxFiL << "," << imaxFiL << ","
-                        << maxFiR << "," << imaxFiR << ","
-                        << fCalc.contactFlag << ","
-                        << fCalc.max_force_diff
-                        << "\n";
-            }
 
             // Newmark parameters
             const double newmark_beta  = 0.275625;
@@ -1621,7 +1535,7 @@ void Simulation::run() {
 
         // 3Dモデル出力
         if (n % 20 == 0 && params.nstep-n <= 5000) {
-            //writeVTKCombined(num, geomL, stateL, geomR, stateR, vtuResultDir.string(), 20);
+            writeVTKCombined(num, geomL, stateL, geomR, stateR, vtuResultDir.string(), 20);
             num++;
         }
 

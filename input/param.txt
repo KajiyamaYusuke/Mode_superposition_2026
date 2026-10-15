@@ -4,15 +4,15 @@
 # number of points along z-axis(nsurfz)
 18
 # number of step nstep
-20000
+100000
 # output interval nwrite
 20
 # time step for time integration dt
 1.0E-5
 # damping coefficient zetaL
-0.03
+0.02
 # damping coefficient zetaR
-0.03
+0.02
 # contact coefficients kc1 , kc2 and kc3(Pa s/m)
 5   6000   5000
 # max iteration for contact calculation

@@ -128,11 +128,8 @@ public:
     // Local constants used only by wall-pressure reconstruction.  Acoustic
     // circuit state itself is owned exclusively by FlowModel.
     double rho = 0.0, mu = 0.0, lg = 0.0;
-    std::ofstream debugForceFile;
     std::ofstream contactDebugFile;
-    std::ofstream contactMonitorFile;
     std::ofstream contactIterationFile;
-    std::ofstream contactSearchFile;
     std::ofstream contactFinalStateFile;
     std::ofstream contactRegionSummaryFile;
     std::ofstream contactPairsDetailFile;

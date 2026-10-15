@@ -108,12 +108,6 @@ void ForceCalculator::initialize() {
     contactForceR_ij.resize(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
 
-    //[DEBUG]
-    debugForceFile.open(outputDirectory_ / "txt" / "debug_force.txt", std::ios::trunc);
-    if (debugForceFile) {
-        debugForceFile << "=== Debug Force Log Initialized ===\n";
-    }
-
     contactDebugFile.open(outputDirectory_ / "csv" / "contact_debug.csv", std::ios::trunc);
     if (contactDebugFile) {
         contactDebugFile
@@ -124,16 +118,6 @@ void ForceCalculator::initialize() {
             << "sumContactL,sumContactR,"
             << "maxContactL,maxContactIL,maxContactJL,"
             << "maxContactR,maxContactIR,maxContactJR\n";
-    }
-
-    contactMonitorFile.open(outputDirectory_ / "csv" / "contact_monitor.csv", std::ios::trunc);
-    if (contactMonitorFile) {
-        contactMonitorFile
-            << "step,time,contact_iter,monitor_i,monitor_j,"
-            << "gap_y_mm,candidate_pairs,penetrating_pairs,"
-            << "contact_force_L_N,contact_force_R_N,"
-            << "fdisXL_N,fdisYL_N,fdisXR_N,fdisYR_N,"
-            << "contact_flag,max_force_diff,force_residual,penetration_residual_m\n";
     }
 
     contactIterationFile.open(outputDirectory_ / "csv" / "contact_iteration_debug.csv", std::ios::trunc);
@@ -148,13 +132,6 @@ void ForceCalculator::initialize() {
             << "kc1,kc2,kc3,contact_reference_frequency_hz,"
             << "nx,ny,normal_separation_alignment,"
             << "contact_flag,max_force_diff,force_residual,penetration_residual_m\n";
-    }
-
-    contactSearchFile.open(outputDirectory_ / "csv" / "contact_search_debug.csv", std::ios::trunc);
-    if (contactSearchFile) {
-        contactSearchFile
-            << "step,time,contact_iter,candidate_pairs,penetrating_pairs,"
-            << "cached_candidates,two_pointer_candidates,fallback_candidates\n";
     }
 
     contactFinalStateFile.open(outputDirectory_ / "csv" / "contact_final_state.csv", std::ios::trunc);
@@ -320,12 +297,6 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
         // psurf 計算
         std::fill(psurf.begin(), psurf.end(), 0.0);
         psurf[0] = currentPg;
-
-        if(debugForceFile){
-            debugForceFile << "Step: " << std::setw(4) << n 
-                           << " | minA: " << std::scientific << std::setprecision(12) << minA 
-                           << " | subPg: " << std::scientific << std::setprecision(12) << currentPg  << "\n";
-        }
 
         if (minA > kAreaClosedMm2) {
             for (int i = 1; i <= sepIndex; ++i) {
@@ -1674,29 +1645,6 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
     contact_force_residual = max_force_diff /
         std::max(std::sqrt(contactForceNormSquared), 1.0e-9);
 
-    if (contactMonitorFile && contactMonitorI >= 0 && contactMonitorJ >= 0 &&
-        contactMonitorI < geomL.nxsup && contactMonitorI < geomR.nxsup &&
-        contactMonitorJ < geomL.nsurfz && contactMonitorJ < geomR.nsurfz) {
-        const int pidL = geomL.surfp[contactMonitorI][contactMonitorJ];
-        const int pidR = geomR.surfp[contactMonitorI][contactMonitorJ];
-        const double gapY = (pidL >= 0 && pidR >= 0)
-            ? stateR.predictedDisp[pidR].uy - stateL.predictedDisp[pidL].uy
-            : std::numeric_limits<double>::quiet_NaN();
-        contactMonitorFile << std::scientific << std::setprecision(12)
-            << step << "," << time << "," << contactIter << ","
-            << contactMonitorI << "," << contactMonitorJ << ","
-            << gapY << ","
-            << monitorCandidatePairs << "," << monitorPenetratingPairs << ","
-            << contactForceL_ij[contactMonitorI][contactMonitorJ] << ","
-            << contactForceR_ij[contactMonitorI][contactMonitorJ] << ","
-            << fdisXL[contactMonitorI][contactMonitorJ] << ","
-            << fdisYL[contactMonitorI][contactMonitorJ] << ","
-            << fdisXR[contactMonitorI][contactMonitorJ] << ","
-            << fdisYR[contactMonitorI][contactMonitorJ] << ","
-            << contactFlag << "," << max_force_diff << ","
-            << contact_force_residual << "," << contact_penetration_residual << "\n";
-    }
-
     if (contactIterationFile) {
         contactIterationFile << std::scientific << std::setprecision(12)
             << step << "," << time << "," << contactIter << ","
@@ -1712,14 +1660,6 @@ for (int i = 0; i < static_cast<int>(fdisXL.size()); ++i) {
             << maxPenNx << "," << maxPenNy << "," << maxPenNormalAlignment << ","
             << contactFlag << "," << max_force_diff << ","
             << contact_force_residual << "," << contact_penetration_residual << "\n";
-    }
-
-    if (contactSearchFile) {
-        contactSearchFile << step << "," << std::scientific << std::setprecision(12)
-            << time << "," << contactIter << ","
-            << candidatePairCount << "," << contactPairCount << ","
-            << cachedCandidateCount << "," << twoPointerCandidateCount << ","
-            << fallbackCandidateCount << "\n";
     }
 
 
