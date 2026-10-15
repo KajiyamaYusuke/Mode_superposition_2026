@@ -23,6 +23,8 @@ find_package(OpenMP REQUIRED)
 add_executable(simulation
     src/channelSections.cpp
     src/forceCalculator.cpp
+    src/forceCalculatorFluid.cpp
+    src/forceCalculatorContact.cpp
     src/flowModel.cpp
     src/geometry.cpp
     src/modedata.cpp

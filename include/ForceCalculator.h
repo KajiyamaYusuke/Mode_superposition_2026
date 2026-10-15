@@ -78,7 +78,6 @@ public:
 
     std::vector<double> psurf;
     std::vector<double> Ug;        // Glottal flow history
-    std::vector<double> minHarea;  // Minimum area 
     std::vector<double>& harea;  // 流路断面積
 
     std::vector<std::vector<double>> prevFdisXL;
@@ -95,8 +94,6 @@ public:
     double contact_penetration_residual = 0.0;
     double max_contact_penetration = 0.0;
 
-    std::vector<std::vector<double>> contactForceL_ij;
-    std::vector<std::vector<double>> contactForceR_ij;
 
     std::vector<std::vector<double>> fdisXL, fdisYL;
     std::vector<std::vector<double>> fdisXR, fdisYR;
@@ -106,7 +103,7 @@ public:
     double previousUg = 0.0;
     // Local constants used only by wall-pressure reconstruction.  Acoustic
     // circuit state itself is owned exclusively by FlowModel.
-    double rho = 0.0, mu = 0.0, lg = 0.0;
+    double rho = 0.0, mu = 0.0;
     // Candidate pairs from the first contact iteration of the current time
     // step.  Reusing them in later iterations avoids repeated broad-phase
     // searches while retaining a full search at every new time step.
