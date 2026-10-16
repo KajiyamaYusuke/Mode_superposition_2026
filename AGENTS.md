@@ -4,13 +4,20 @@
 
 This is a C++17 vocal-fold mode-superposition simulation.
 
-- `src/`: implementation files. `simulation.cpp` coordinates the time loop; focused components handle geometry, flow, contact forces, modal projection, and integration.
-- `include/`: matching public headers and shared data structures.
+- `src/main.cpp`: executable entry point.
+- `src/simulation/`: simulation orchestration and input parameters.
+- `src/structure/`: geometry, modal data, structural state, and integration. The existing `rungeStep.cpp` filename is retained; it currently includes Newmark integration.
+- `src/fluid/`: channel sections, flow, and separation selection.
+- `src/forces/`: fluid/contact loads, surface loads, and modal force projection.
+- `include/`: matching headers and shared data structures in the same four categories: `simulation/`, `structure/`, `fluid/`, and `forces/`.
+- `docs/cleanup/`: cleanup instructions, historical validation reports, and directory reorganization reports.
+- `docs/plans/`: research and implementation specifications and plans.
 - `input/`: parameter files, modal VTU data, frequencies, and surface meshes required at runtime.
 - `tools/`: Python scripts for waveform, pressure, displacement, and spectrum analysis.
+- `tests/`: existing C++ test sources; location unchanged.
 - `output/`: latest scalar, CSV, and WAV results; runs overwrite this workspace.
 - `result/`: generated VTU deformation output.
-- `nonperiodic_vibration_analysis_plan.md`: requirements for dynamics analysis and pressure sweeps.
+- `nonperiodic_vibration_analysis_plan.md`: existing reference to dynamics analysis and pressure-sweep requirements; the file is not present in this working tree and has not been replaced by another document.
 
 Keep generated files out of commits. `build/`, `output/`, `result/`, and common analysis artifacts are ignored.
 
