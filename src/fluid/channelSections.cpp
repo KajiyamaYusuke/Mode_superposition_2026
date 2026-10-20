@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -230,27 +231,38 @@ double yOnEdge(const Contour& contour, int edgeId, double z) {
     return a.y + (z - a.z) / (b.z - a.z) * (b.y - a.y);
 }
 
-// At a knot include horizontal edges and deduplicate real shared vertices.
-double envelopeAtKnot(const Contour& contour, double z, bool takeMaximum) {
-    std::vector<double> ys;
-    for (const auto& edge : contour.edges) {
-        const auto a = contour.nodes[edge.a], b = contour.nodes[edge.b];
-        if (z < std::min(a.z, b.z) - cutTolerance
-            || z > std::max(a.z, b.z) + cutTolerance) continue;
-        if (std::abs(b.z - a.z) <= cutTolerance) {
-            ys.push_back(a.y); ys.push_back(b.y);
-        } else {
-            const double s = std::clamp((z - a.z) / (b.z - a.z), 0.0, 1.0);
-            ys.push_back(a.y + s * (b.y - a.y));
-        }
-    }
-    std::sort(ys.begin(), ys.end());
-    ys.erase(std::unique(ys.begin(), ys.end(), [](double a, double b) {
-        return std::abs(a - b) <= cutTolerance;
-    }), ys.end());
-    if (ys.size() > 2) throw std::runtime_error("three or more distinct intersections at z=" + std::to_string(z));
-    return ys.empty() ? std::numeric_limits<double>::quiet_NaN()
-                      : (takeMaximum ? ys.back() : ys.front());
+double zRoundoffTolerance(double a, double b) {
+    return 8.0 * std::numeric_limits<double>::epsilon()
+        * std::max({1.0, std::abs(a), std::abs(b)});
+}
+
+std::array<double, 2> intervalEndpointY(const Contour& contour, int edgeId,
+                                      double z0, double z1, const char* side) {
+    const auto edge = contour.edges[edgeId];
+    const auto a = contour.nodes[edge.a], b = contour.nodes[edge.b];
+    const double low = std::min(a.z, b.z), high = std::max(a.z, b.z);
+    const double mid = 0.5 * (z0 + z1);
+    auto fail = [&](const char* reason) {
+        std::ostringstream message;
+        message.precision(std::numeric_limits<double>::max_digits10);
+        message << side << " edge=" << edgeId << " z_interval=[" << z0 << "," << z1
+                << "] mid=" << mid << " edge_endpoints_yz=[(" << a.y << "," << a.z
+                << "),(" << b.y << "," << b.z << ")]: " << reason;
+        throw std::runtime_error(message.str());
+    };
+    if (!(mid > low && mid < high) || !std::isfinite(b.z - a.z))
+        fail("selected edge must strictly straddle the interval midpoint");
+    const double tolerance = std::max(zRoundoffTolerance(z0, z1),
+                                      zRoundoffTolerance(low, high));
+    if (z0 < low - tolerance || z1 > high + tolerance)
+        fail("interval endpoints exceed the selected edge beyond roundoff");
+    // One-sided limits from this interval's edge, not all intersections at
+    // the knot. A horizontal edge is never a midpoint candidate.
+    const std::array<double, 2> y{yOnEdge(contour, edgeId, z0),
+                                 yOnEdge(contour, edgeId, z1)};
+    if (!std::isfinite(y[0]) || !std::isfinite(y[1]))
+        fail("non-finite interval endpoint y");
+    return y;
 }
 
 int envelopeEdge(const Contour& contour, double z, bool takeMaximum) {
@@ -340,7 +352,9 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
             knots.push_back(refHigh);
             std::sort(knots.begin(), knots.end());
             knots.erase(std::unique(knots.begin(), knots.end(), [](double a, double b) {
-                return std::abs(a - b) <= cutTolerance;
+                // Preserve real short intervals on near-horizontal edges.
+                // Spatial vertex deduplication is separate from z knots.
+                return std::abs(a - b) <= zRoundoffTolerance(a, b);
             }), knots.end());
             double coveredLength = 0.0;
             for (size_t j = 1; j < knots.size(); ++j) {
@@ -352,28 +366,21 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
 
             validateContour(l); validateContour(r);
             const bool maxLeft = sections.gapSign > 0.0;
-            std::vector<double> leftAtKnots, rightAtKnots;
-            leftAtKnots.reserve(knots.size()); rightAtKnots.reserve(knots.size());
-            for (double z : knots) {
-                leftAtKnots.push_back(envelopeAtKnot(l, z, maxLeft));
-                rightAtKnots.push_back(envelopeAtKnot(r, z, !maxLeft));
-            }
             double area = 0.0, cubed = 0.0;
             for (size_t j = 1; j < knots.size(); ++j) {
                 const double z0 = knots[j - 1], z1 = knots[j], mid = 0.5 * (z0 + z1);
+                if (!(z0 < mid && mid < z1)) {
+                    std::ostringstream message;
+                    message.precision(std::numeric_limits<double>::max_digits10);
+                    message << "unresolvable z interval=[" << z0 << "," << z1 << "]";
+                    throw std::runtime_error(message.str());
+                }
                 const int il = envelopeEdge(l, mid, maxLeft), ir = envelopeEdge(r, mid, !maxLeft);
-                const double l0 = il >= 0 ? yOnEdge(l, il, z0) : 0.0;
-                const double l1 = il >= 0 ? yOnEdge(l, il, z1) : 0.0;
-                const double r0 = ir >= 0 ? yOnEdge(r, ir, z0) : 0.0;
-                const double r1 = ir >= 0 ? yOnEdge(r, ir, z1) : 0.0;
-                if ((il >= 0 && (std::abs(l0 - leftAtKnots[j - 1]) > cutTolerance
-                                 || std::abs(l1 - leftAtKnots[j]) > cutTolerance))
-                    || (ir >= 0 && (std::abs(r0 - rightAtKnots[j - 1]) > cutTolerance
-                                    || std::abs(r1 - rightAtKnots[j]) > cutTolerance)))
-                    throw std::runtime_error("discontinuous inner envelope / branch switch");
                 if (il < 0 || ir < 0) continue; // Never bridge absent AP intervals.
-                const double h0 = sections.gapSign * (r0 - l0);
-                const double h1 = sections.gapSign * (r1 - l1);
+                const auto yl = intervalEndpointY(l, il, z0, z1, "left");
+                const auto yr = intervalEndpointY(r, ir, z0, z1, "right");
+                const double h0 = sections.gapSign * (yr[0] - yl[0]);
+                const double h1 = sections.gapSign * (yr[1] - yl[1]);
                 positiveLinearIntegrals(h0, h1, z1 - z0, area, cubed);
             }
             if (!std::isfinite(area) || !std::isfinite(cubed))
