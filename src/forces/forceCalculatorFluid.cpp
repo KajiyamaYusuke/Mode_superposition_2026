@@ -2,7 +2,8 @@
 #include "FluidConstants.h"
 #include <algorithm>
 #include <cmath>
-#include <limits>
+#include <stdexcept>
+#include <string>
 
 void ForceCalculator::applyFluidLoads(double t, int n) {
     // 左右で共通の分割数を使用
@@ -51,28 +52,33 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
         }
     } else if (sp.iforce == 0) {
         // ==== 1D flow model ====
-        const double minA = findMinHarea();
+        // Select before advancing: FlowModel uses this same shared function,
+        // area ratio and closure threshold for its Rv integration limit.
+        lastSeparationSelection_ = selectSeparationByAreaRatio(
+            harea, sections.valid, sp.flowSeparationAreaRatio, kAreaClosedMm2);
+        if (lastSeparationSelection_.sepIndex < 0) {
+            throw std::runtime_error("fluid time_s=" + std::to_string(t)
+                + " step=" + std::to_string(n)
+                + " minimum_section=" + std::to_string(lastSeparationSelection_.minIndex)
+                + ": " + lastSeparationSelection_.reason);
+        }
+        const int sepIndex = lastSeparationSelection_.sepIndex;
+        const double minA = lastSeparationSelection_.minAreaMm2;
 
         previousUg = (n > 0 && n-1 < (int)Ug.size()) ? Ug[n-1] : 0.0;
 
-        // 安全な面積を使って流体計算を進める
+        // Advance with the same inlet-connected geometry and selected Amin.
         flowModel.advance(t, sp.dt, minA * 1e-6, previousUg, sections);
         currentUg = flowModel.flowRate();
         currentPg = flowModel.glottalPressure();
 
-        lastSeparationSelection_ = selectSeparationByAreaRatio(
-            harea, sections.valid, sp.flowSeparationAreaRatio, kAreaClosedMm2);
-        // Invalid geometry remains diagnosable and uses the historical last
-        // interior pressure station as a safe fallback.
-        const int selectedIndex = lastSeparationSelection_.sepIndex >= 0
-            ? lastSeparationSelection_.sepIndex
-            : std::max(0, nFlowSections - 2);
-
+        if (!std::isfinite(currentUg) || !std::isfinite(currentPg)) {
+            throw std::runtime_error("nonfinite flow/pressure at time_s="
+                + std::to_string(t) + " section=" + std::to_string(sepIndex));
+        }
         Ug[n] = currentUg;
 
-        // Construct the pressure only up to the physical separation plane.
-        // Downstream loading is mapped with a smooth physical-x blend below.
-        const int sepIndex = std::clamp(selectedIndex, 0, nFlowSections - 1);
+        // Construct attached-flow pressure up to the physical separation plane.
         const auto& tractPressure = flowModel.downstreamPressure();
         const double downstreamPressure = tractPressure.empty() ? 0.0 : tractPressure.front();
         // psurf 計算
@@ -81,14 +87,8 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
 
         if (minA > kAreaClosedMm2) {
             for (int i = 1; i <= sepIndex; ++i) {
-                if (!sections.valid[i - 1] || !sections.valid[i]) {
-                    // A geometric cut failure is not a physical closure.  Do
-                    // not turn it into an artificial pressure singularity.
-                    psurf[i] = psurf[i - 1];
-                    continue;
-                }
-                // Pressure stations use their deformed common-plane positions.
-                double dx = std::abs(sections.x[i] - sections.x[i-1]);
+                // FlowModel has validated this complete upstream interval.
+                double dx = sections.x[i] - sections.x[i-1];
                 double h_prev = std::max(harea[i-1], 1e-3);
                 double h_curr = std::max(harea[i], 1e-3);
                 const double g3 = 0.5 * (sections.gapCubed[i] + sections.gapCubed[i - 1]);
@@ -104,8 +104,8 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
                 if (psurf[i] > psurf[i-1]) {
                     // Numerical pressure recovery before the selected
                     // constriction must not leave zero-filled stations behind.
-                    // Keep the last attached-flow value through xSep; the
-                    // physical-x downstream blend handles the separation.
+                    // Keep the last attached-flow value through xSep;
+                    // downstream wall pressure remains this same Psep.
                     psurf[i] = psurf[i - 1];
                     for (int k = i + 1; k <= sepIndex; ++k) psurf[k] = psurf[i];
                     break;
@@ -118,65 +118,35 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
         }
 
         const double separationPressure = psurf[sepIndex];
-        for (int i = sepIndex + 1; i < nFlowSections; ++i) psurf[i] = downstreamPressure;
+        if (!std::isfinite(separationPressure)) {
+            throw std::runtime_error("nonfinite Psep at time_s="
+                + std::to_string(t) + " section=" + std::to_string(sepIndex));
+        }
+        for (int i = sepIndex + 1; i < nFlowSections; ++i) psurf[i] = separationPressure;
 
         // Surface nodes receive pressure from the actual deformed x = const
         // flow planes, rather than from their nearest material-index column.
         // This keeps the area calculation and the pressure-to-surface mapping
         // on the same set of planes when the two folds are tilted differently.
         const double xSep = sections.x[sepIndex];
-        const double xBlendEnd = std::min(xSep + sp.flowBlendLengthMm, sections.x.back());
         lastSeparationIndex_ = sepIndex;
         lastSeparationX_ = xSep;
-        lastBlendEndX_ = xBlendEnd;
+        lastBlendEndX_ = xSep; // Preserve the output column; no blend remains.
         lastSeparationPressure_ = separationPressure;
         auto pressureAtSurfaceX = [&](double xNode) {
-            if (!std::isfinite(xNode) || !std::isfinite(xSep)) {
-                return 0.0;
+            if (!std::isfinite(xNode)) {
+                throw std::runtime_error("nonfinite surface x at time_s="
+                    + std::to_string(t) + " section=" + std::to_string(sepIndex));
             }
-
-            // Upstream of separation, interpolate only between the common
-            // physical section planes.  No surface material index enters the
-            // decision, so the two tilted folds share one load cutoff.
-            if (xNode <= xSep) {
-            int bestSegment = -1;
-            double bestDistance = std::numeric_limits<double>::infinity();
-                for (int k = 0; k < sepIndex; ++k) {
-                const double x0 = sections.x[k];
-                const double x1 = sections.x[k + 1];
-                if (!std::isfinite(x0) || !std::isfinite(x1)) continue;
-                if ((xNode - x0) * (xNode - x1) > 0.0) continue;
-                const double midpointDistance = std::abs(xNode - 0.5 * (x0 + x1));
-                if (midpointDistance < bestDistance) {
-                    bestDistance = midpointDistance;
-                    bestSegment = k;
-                }
-            }
-
-            if (bestSegment >= 0) {
-                const double x0 = sections.x[bestSegment];
-                const double x1 = sections.x[bestSegment + 1];
-                const double dx = x1 - x0;
-                const double w = std::abs(dx) > 1.0e-12
-                    ? std::clamp((xNode - x0) / dx, 0.0, 1.0) : 0.5;
-                return (1.0 - w) * psurf[bestSegment] + w * psurf[bestSegment + 1];
-            }
-
-                if (xNode < sections.x.front()) {
-                    return psurf.front();
-                }
-                return separationPressure;
-            }
-
-            // A two-plane smoothstep transition suppresses a non-physical
-            // force cliff after separation while tending to the tract value.
-            if (std::isfinite(xBlendEnd) && xNode < xBlendEnd
-                && xBlendEnd > xSep + 1.0e-12) {
-                const double s = std::clamp((xNode - xSep) / (xBlendEnd - xSep), 0.0, 1.0);
-                const double smooth = s * s * (3.0 - 2.0 * s);
-                return (1.0 - smooth) * separationPressure + smooth * downstreamPressure;
-            }
-            return downstreamPressure;
+            // Both sides use the same physical xSep and signed Psep. The
+            // acoustic Pd state is neither substituted here nor overwritten.
+            if (xNode >= xSep) return separationPressure;
+            if (xNode <= sections.x.front()) return psurf.front();
+            const auto upper = std::upper_bound(
+                sections.x.begin(), sections.x.begin() + sepIndex + 1, xNode);
+            const int k = static_cast<int>(upper - sections.x.begin()) - 1;
+            const double w = (xNode - sections.x[k]) / (sections.x[k + 1] - sections.x[k]);
+            return (1.0 - w) * psurf[k] + w * psurf[k + 1];
         };
 
         struct Vector3 { double x, y, z; };
@@ -245,10 +215,9 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
 }
 
 double ForceCalculator::findMinHarea() const {
-    double minimum = std::numeric_limits<double>::infinity();
-    for (int i = 1; i + 1 < static_cast<int>(harea.size()); ++i) {
-        if (!sections.valid[i] || !std::isfinite(harea[i])) continue;
-        minimum = std::min(minimum, harea[i]);
-    }
-    return std::isfinite(minimum) ? minimum : 0.0;
+    const auto selection = selectSeparationByAreaRatio(
+        harea, sections.valid, sp.flowSeparationAreaRatio, kAreaClosedMm2);
+    if (selection.sepIndex < 0)
+        throw std::runtime_error("channel minimum: " + selection.reason);
+    return selection.minAreaMm2;
 }

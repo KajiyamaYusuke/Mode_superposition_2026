@@ -1,9 +1,12 @@
 #include "FlowModel.h"
 #include "FluidConstants.h"
+#include "SeparationSelection.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <string>
 
 void FlowModel::initialize(const SimulationParams& params, const Geometry& geometry,
                            int nSteps) {
@@ -41,20 +44,42 @@ void FlowModel::initialize(const SimulationParams& params, const Geometry& geome
 
 void FlowModel::advance(double time, double dt, double minimumArea, double previousFlow,
                         const ChannelSections& sections) {
-    previousUg_ = previousFlow;
+    const auto selection = selectSeparationByAreaRatio(
+        sections.area, sections.valid, sp_->flowSeparationAreaRatio, kAreaClosedMm2);
+    auto fail = [time](int i, const std::string& reason) {
+        throw std::runtime_error("flow time_s=" + std::to_string(time)
+            + " section=" + std::to_string(i) + ": " + reason);
+    };
+    if (selection.sepIndex < 0) fail(selection.minIndex, selection.reason);
+    if (sections.x.size() != sections.area.size()
+        || sections.gapCubed.size() != sections.area.size())
+        fail(-1, "inconsistent section array sizes");
+    if (minimumArea != selection.minAreaMm2 * 1.0e-6)
+        fail(selection.minIndex, "inconsistent minimum area");
     // Distributed glottal inertance and viscosity are calculated from the
-    // same instantaneous sections used by the wall-pressure calculation.
+    // same selection as wall pressure. Lg uses the contiguous inlet prefix;
+    // Rv stops at separation. Neither resumes beyond an invalid section.
     double invAreaIntegral = 0.0; // [1/m]
     double invGapCubedIntegral = 0.0; // [1/m^3]
-    for (int i = 1; i < static_cast<int>(sections.area.size()); ++i) {
-        if (!sections.valid[i - 1] || !sections.valid[i]) continue;
+    for (int i = 0; i < static_cast<int>(sections.area.size()) && sections.valid[i]; ++i) {
+        if (!std::isfinite(sections.x[i]) || !std::isfinite(sections.gapCubed[i])
+            || sections.gapCubed[i] < 0.0) fail(i, "invalid geometric integral input");
+        if (sections.area[i] > kAreaClosedMm2 && !(sections.gapCubed[i] > 0.0))
+            fail(i, "open section has nonpositive G3");
+        if (i == 0) continue;
         const double dxMm = sections.x[i] - sections.x[i - 1];
         const double areaMm2 = 0.5 * (sections.area[i] + sections.area[i - 1]);
         const double g3Mm4 = 0.5 * (sections.gapCubed[i] + sections.gapCubed[i - 1]);
-        if (!(dxMm > 0.0) || !std::isfinite(areaMm2) || !std::isfinite(g3Mm4)) continue;
+        if (!(dxMm > 0.0) || !std::isfinite(dxMm)
+            || !std::isfinite(areaMm2) || !std::isfinite(g3Mm4))
+            fail(i, "nonmonotonic x or nonfinite section average");
         if (areaMm2 > kAreaClosedMm2) invAreaIntegral += dxMm * 1.0e3 / areaMm2;
-        if (g3Mm4 > 1.0e-12) invGapCubedIntegral += dxMm * 1.0e9 / g3Mm4;
+        if (i <= selection.sepIndex && g3Mm4 > 1.0e-12)
+            invGapCubedIntegral += dxMm * 1.0e9 / g3Mm4;
     }
+    if (!std::isfinite(invAreaIntegral) || !std::isfinite(invGapCubedIntegral))
+        fail(selection.sepIndex, "nonfinite Lg/Rv geometry");
+    previousUg_ = previousFlow;
     // Store the equivalent geometric factors in the existing members.  They
     // are not independent acoustic state and are rebuilt every time step.
     glottalInertanceGeometry_ = 0.5 * invAreaIntegral;

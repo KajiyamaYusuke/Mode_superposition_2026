@@ -26,5 +26,5 @@ diagnostic_runs/
 .vscode/
 
 # 実行ファイル
-simulation
+/simulation
 *.exe

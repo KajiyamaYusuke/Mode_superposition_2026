@@ -126,7 +126,7 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "right_frequency = " << rightFrequencyFile.string() << "\n"
              << "left_surface_nas = " << leftSurfaceNasFile.string() << "\n"
              << "right_surface_nas = " << rightSurfaceNasFile.string() << "\n"
-             << "flow_sections = 50\n"
+             << "flow_sections = 81\n"
              << "area_close_m2 = 1e-8\n";
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
@@ -342,7 +342,14 @@ void Simulation::run() {
 
         // 面積・角度の更新 (左右の相対距離で計算)
 {        auto t0 = now();
-        fCalc.updateChannelSections();
+        try {
+            fCalc.updateChannelSections();
+        } catch (const std::exception& error) {
+            // Add time context without changing geometry or solver state.
+            std::cerr << "[ChannelSections] time_s=" << t << " step=" << n
+                      << ": " << error.what() << std::endl;
+            throw;
+        }
         auto t1 = now();
         time_calcArea += elapsed_ms(t0, t1);}
 

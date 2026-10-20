@@ -40,7 +40,7 @@ void ForceCalculator::initialize() {
     prevFdisYR.assign(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
     // --- 共有変数の初期化 ---
-    constexpr int flowSectionCount = 50;
+    constexpr int flowSectionCount = 81;
     sections.resize(geomL, geomR, flowSectionCount);
     psurf.assign(flowSectionCount, 0.0);
     Ug.assign(stateL.nSteps, 0.0);       // ステップ数はL/R共通
@@ -61,9 +61,10 @@ void ForceCalculator::initialize() {
               << ", separation_method=downstream_area_ratio"
               << std::endl;
     std::cout << "[ChannelSections] " << flowSectionCount
-              << " fixed flow planes; retained initial constriction at i="
-              << sections.referenceConstrictionI
-              << " (sigma=" << sections.referenceConstrictionSigma << ")"
+              << " fixed physical x planes (0:0.5:10, 10.05:0.05:13 mm); "
+              << "observed inner-envelope area, not full airway area; "
+              << "AP coverage >=90%, contiguous inlet prefix only; "
+              << "legacy material sigma/anchor inactive"
               << std::endl;
 }
 
