@@ -236,6 +236,54 @@ double zRoundoffTolerance(double a, double b) {
         * std::max({1.0, std::abs(a), std::abs(b)});
 }
 
+double normalizeZKnots(std::vector<double>& knots, double referenceApLengthMm) {
+    // Provisional bound on accumulated normalization width, distinct from
+    // the per-group geometric tolerance. This is not a physical accuracy claim.
+    constexpr double maximumDiscardedApFraction = 1.0e-8;
+    const double budgetMm = maximumDiscardedApFraction * referenceApLengthMm;
+    if (!(referenceApLengthMm > 0.0) || !std::isfinite(referenceApLengthMm)
+        || !(budgetMm > 0.0) || !std::isfinite(budgetMm))
+        throw std::runtime_error("invalid reference AP length for z-knot normalization");
+    const size_t rawSize = knots.size();
+    for (size_t i = 0; i < rawSize; ++i) {
+        if (!std::isfinite(knots[i]))
+            throw std::runtime_error("nonfinite z knot at candidate=" + std::to_string(i));
+    }
+    std::sort(knots.begin(), knots.end());
+    size_t kept = 0;
+    double groupLast = 0.0, totalDiscardedDz = 0.0, maximumGroupSpan = 0.0;
+    for (double z : knots) {
+        // The retained value is the group FIRST, not the previous raw value:
+        // chains of nearby candidates cannot expand a group beyond cutTolerance.
+        if (kept == 0 || z - knots[kept - 1] > cutTolerance) {
+            if (kept > 0) totalDiscardedDz += groupLast - knots[kept - 1];
+            knots[kept++] = z; // Representative is an existing candidate.
+        } else {
+            maximumGroupSpan = std::max(maximumGroupSpan, z - knots[kept - 1]);
+        }
+        groupLast = z;
+    }
+    if (kept > 0) totalDiscardedDz += groupLast - knots[kept - 1];
+    knots.resize(kept);
+    // A section can contain many individually negligible merged groups.
+    // Scale only their cumulative bound by the initial reference AP length.
+    if (!std::isfinite(totalDiscardedDz) || maximumGroupSpan > cutTolerance
+        || totalDiscardedDz > budgetMm) {
+        std::ostringstream message;
+        message.precision(std::numeric_limits<double>::max_digits10);
+        message << "excessive z-knot normalization: total_discarded_dz_mm="
+                << totalDiscardedDz << " budget_mm=" << budgetMm
+                << " reference_ap_length_mm=" << referenceApLengthMm
+                << " discarded_ap_fraction=" << totalDiscardedDz / referenceApLengthMm
+                << " maximum_discarded_ap_fraction=" << maximumDiscardedApFraction
+                << " maximum_group_span_mm=" << maximumGroupSpan
+                << " raw_size=" << rawSize << " normalized_size=" << kept
+                << " removed_count=" << rawSize - kept;
+        throw std::runtime_error(message.str());
+    }
+    return totalDiscardedDz;
+}
+
 std::array<double, 2> intervalEndpointY(const Contour& contour, int edgeId,
                                       double z0, double z1, const char* side) {
     const auto edge = contour.edges[edgeId];
@@ -252,14 +300,15 @@ std::array<double, 2> intervalEndpointY(const Contour& contour, int edgeId,
     };
     if (!(mid > low && mid < high) || !std::isfinite(b.z - a.z))
         fail("selected edge must strictly straddle the interval midpoint");
-    const double tolerance = std::max(zRoundoffTolerance(z0, z1),
-                                      zRoundoffTolerance(low, high));
+    const double tolerance = std::max(cutTolerance, zRoundoffTolerance(z0, z1));
     if (z0 < low - tolerance || z1 > high + tolerance)
-        fail("interval endpoints exceed the selected edge beyond roundoff");
-    // One-sided limits from this interval's edge, not all intersections at
-    // the knot. A horizontal edge is never a midpoint candidate.
-    const std::array<double, 2> y{yOnEdge(contour, edgeId, z0),
-                                 yOnEdge(contour, edgeId, z1)};
+        fail("interval endpoints exceed the selected edge beyond normalization tolerance");
+    // Snap only normalization-scale offsets to the selected edge, never
+    // extrapolate. The strict midpoint check above still rejects horizontal edges.
+    const double za = std::clamp(z0, low, high);
+    const double zb = std::clamp(z1, low, high);
+    const std::array<double, 2> y{yOnEdge(contour, edgeId, za),
+                                 yOnEdge(contour, edgeId, zb)};
     if (!std::isfinite(y[0]) || !std::isfinite(y[1]))
         fail("non-finite interval endpoint y");
     return y;
@@ -350,12 +399,7 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
             for (const auto& p : r.nodes) knots.push_back(p.z);
             for (int j = 0; refLow + 0.1 * j < refHigh; ++j) knots.push_back(refLow + 0.1 * j);
             knots.push_back(refHigh);
-            std::sort(knots.begin(), knots.end());
-            knots.erase(std::unique(knots.begin(), knots.end(), [](double a, double b) {
-                // Preserve real short intervals on near-horizontal edges.
-                // Spatial vertex deduplication is separate from z knots.
-                return std::abs(a - b) <= zRoundoffTolerance(a, b);
-            }), knots.end());
+            const double totalDiscardedDz = normalizeZKnots(knots, refHigh - refLow);
             double coveredLength = 0.0;
             for (size_t j = 1; j < knots.size(); ++j) {
                 const double mid = 0.5 * (knots[j - 1] + knots[j]);
@@ -369,10 +413,12 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
             double area = 0.0, cubed = 0.0;
             for (size_t j = 1; j < knots.size(); ++j) {
                 const double z0 = knots[j - 1], z1 = knots[j], mid = 0.5 * (z0 + z1);
-                if (!(z0 < mid && mid < z1)) {
+                if (!(z1 - z0 > cutTolerance) || !(z0 < mid && mid < z1)) {
                     std::ostringstream message;
                     message.precision(std::numeric_limits<double>::max_digits10);
-                    message << "unresolvable z interval=[" << z0 << "," << z1 << "]";
+                    message << "unresolvable z interval=[" << z0 << "," << z1
+                            << "] dz=" << z1 - z0 << " required_dz_gt=" << cutTolerance
+                            << " total_discarded_dz_mm=" << totalDiscardedDz;
                     throw std::runtime_error(message.str());
                 }
                 const int il = envelopeEdge(l, mid, maxLeft), ir = envelopeEdge(r, mid, !maxLeft);
