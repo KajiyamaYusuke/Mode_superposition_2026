@@ -16,6 +16,9 @@ namespace {
 // Millimetres. These tolerances merge shared cut vertices, not distinct branches.
 constexpr double cutTolerance = 1.0e-9;
 constexpr double minimumCoverage = 0.90;
+// Temporary experiment: report AP coverage, but do not reject a cross-section
+// solely for falling below the reference-AP coverage percentage.
+constexpr bool enforceMinimumCoverage = false;
 constexpr int planeCount = 81;
 struct CutPoint { double y, z; };
 struct CutEdge { int a, b; };
@@ -406,7 +409,10 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
                 if (hasAtZ(l, mid) && hasAtZ(r, mid)) coveredLength += knots[j] - knots[j - 1];
             }
             finalCoverage = coveredLength / (refHigh - refLow);
-            if (finalCoverage < minimumCoverage) break;
+            if (enforceMinimumCoverage && finalCoverage < minimumCoverage) break;
+            // A cross-section with no common left/right AP interval has no
+            // defined gap integral.  Do not invent a zero-area closure.
+            if (!(coveredLength > 0.0)) break;
 
             validateContour(l); validateContour(r);
             const bool maxLeft = sections.gapSign > 0.0;
@@ -446,8 +452,11 @@ void ChannelSectionBuilder::build(const Geometry& leftGeom, const State& leftSta
                   << (lastValid >= 0 ? sections.x[lastValid] : std::numeric_limits<double>::quiet_NaN());
         if (lastValid + 1 < planeCount)
             std::cout << " first_invalid_x_mm=" << sections.x[lastValid + 1]
-                      << " AP_coverage=" << finalCoverage << " (required >=0.90)";
-        std::cout << "; contiguous inlet prefix only, no downstream restart" << std::endl;
+                      << " AP_coverage=" << finalCoverage;
+        std::cout << "; AP_coverage_threshold="
+                  << (enforceMinimumCoverage ? "enabled" : "disabled")
+                  << " (reference >= " << minimumCoverage << ")"
+                  << "; contiguous inlet prefix only, no downstream restart" << std::endl;
         loggedSections = &sections; loggedLast = lastValid;
     }
     if (lastValid < 1) throw std::runtime_error("section=0: insufficient AP coverage for an inlet-connected channel");
