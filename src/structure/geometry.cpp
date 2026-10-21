@@ -479,6 +479,9 @@ void Geometry::surfArea() {
         double ymax = -1e9;
         for (int i = 0; i < nsurfl; ++i) {
             int idx = surfp[i][j];  // 2D→1Dインデックス変換
+            if (idx < 0) continue;
+            if (idx >= static_cast<int>(points.size()))
+                throw std::runtime_error("invalid surface point while determining ymid");
             if (points[idx].y > ymax) {
                 ymax = points[idx].y;
             }
@@ -489,39 +492,29 @@ void Geometry::surfArea() {
 
 
 
-    double min_diff = 1e9;
-    nxsup = 0;
-    double prev_x = -1e9; // 前回のX座標を記憶するための変数
-    
+    // Use the FIRST i row attaining the global surface maximum. In a flat
+    // outlet, equal maxima on later rows must not extend loads/contact to
+    // every row. nxsup is a row COUNT, including the maximum row.
+    int maximumI = -1, maximumJ = -1;
+    double surfaceMaximumX = -std::numeric_limits<double>::infinity();
     for (int i = 0; i < nsurfl; ++i) {
-        int nid = surfp[i][0];
-        
-        // メッシュが途切れている場合は終了
-        if (nid < 0) {
-            break; 
+        for (int j = 0; j < nsurfz; ++j) {
+            const int id = surfp[i][j];
+            if (id < 0) continue;
+            if (id >= static_cast<int>(points.size()) || !std::isfinite(points[id].x))
+                throw std::runtime_error("invalid surface point while determining nxsup");
+            if (points[id].x > surfaceMaximumX) {
+                surfaceMaximumX = points[id].x;
+                maximumI = i; maximumJ = j;
+            }
         }
-
-        double curr_x = points[nid].x;
-
-        // 【超重要】X座標が前回から進んでいない（dx ≒ 0）場合は、
-        // 平坦な管（声帯の出口）に到達した証拠なので、迷わず強制終了する！
-        if (i > 0 && std::abs(curr_x - prev_x) < 1e-4) {
-            break;
-        }
-
-        double diff = std::abs(curr_x - xsup);
-
-        // 差が明確に縮まっている間は更新
-        if (diff < min_diff - 1e-5) {
-            min_diff = diff;
-            nxsup = i ; // 要素数として扱うため i + 1
-        } 
-        else {
-            break; // 遠ざかり始めたら終了
-        }
-
-        prev_x = curr_x; 
     }
+    if (maximumI < 1) throw std::runtime_error("insufficient surface rows before maximum x");
+    nxsup = maximumI + 1;
+    std::cout << "[Geometry] maximum surface x=" << surfaceMaximumX
+              << " mm at (i,j)=(" << maximumI << "," << maximumJ
+              << "); nxsup=" << nxsup << "/" << nsurfl
+              << " (first row at global maximum)" << std::endl;
 
 
     if (nsurfl < 2 || nsurfz < 2) return; // 十分なサーフェスがない場合

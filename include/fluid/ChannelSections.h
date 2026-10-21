@@ -7,8 +7,8 @@
 // Instantaneous geometry seen by the 1-D glottal-flow model.  It deliberately
 // contains no flow history and no structural state.
 struct ChannelSections {
-    // Fixed material-flow coordinate [0, 1].  These labels are selected once
-    // from the undeformed mesh and are not re-sampled at later time steps.
+    // Inactive legacy compatibility field; x planes are spaced in the
+    // instantaneous whole-surface common x range, without a material anchor.
     std::vector<double> sigma;
     std::vector<double> x;       // common x = const section locations [mm]
     std::vector<double> area;    // open area of every section [mm^2]
@@ -23,18 +23,15 @@ struct ChannelSections {
     // winding reversal.
     double gapSign = 1.0;
 
-    // The legacy i-grid cross-section with the smallest initial opening is
-    // deliberately retained as one of sigma.  This prevents a coarse flow
-    // grid from silently skipping an initially closed (or nearly closed)
-    // constriction.
+    // Inactive legacy anchor fields (reset by resize()).
     int referenceConstrictionI = -1;
     double referenceConstrictionSigma = 0.5;
     void resize(const Geometry& left, const Geometry& right, int nSections);
 };
 
 // Builds common flow sections by intersecting every constant-j surface line
-// with a common x = const plane.  The planes retain fixed material labels;
-// their deformed x positions are updated once per structural state.
+// with a common x = const plane. Each side selects its inner intersection;
+// only overlapping physical-z segments from consecutive valid j are used.
 class ChannelSectionBuilder {
 public:
     void build(const Geometry& leftGeom, const State& leftState,

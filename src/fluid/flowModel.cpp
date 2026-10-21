@@ -57,16 +57,18 @@ void FlowModel::advance(double time, double dt, double minimumArea, double previ
     if (minimumArea != selection.minAreaMm2 * 1.0e-6)
         fail(selection.minIndex, "inconsistent minimum area");
     // Distributed glottal inertance and viscosity are calculated from the
-    // same selection as wall pressure. Lg uses the contiguous inlet prefix;
-    // Rv stops at separation. Neither resumes beyond an invalid section.
+    // same selection as wall pressure. Both Lg and Rv stop at separation.
+    // Only adjacent valid sections contribute; never bridge an invalid cut.
     double invAreaIntegral = 0.0; // [1/m]
     double invGapCubedIntegral = 0.0; // [1/m^3]
-    for (int i = 0; i < static_cast<int>(sections.area.size()) && sections.valid[i]; ++i) {
-        if (!std::isfinite(sections.x[i]) || !std::isfinite(sections.gapCubed[i])
+    for (int i = 0; i <= selection.sepIndex; ++i) {
+        if (!sections.valid[i]) continue;
+        if (!std::isfinite(sections.x[i]) || !std::isfinite(sections.area[i])
+            || sections.area[i] < 0.0 || !std::isfinite(sections.gapCubed[i])
             || sections.gapCubed[i] < 0.0) fail(i, "invalid geometric integral input");
         if (sections.area[i] > kAreaClosedMm2 && !(sections.gapCubed[i] > 0.0))
             fail(i, "open section has nonpositive G3");
-        if (i == 0) continue;
+        if (i == 0 || !sections.valid[i - 1]) continue;
         const double dxMm = sections.x[i] - sections.x[i - 1];
         const double areaMm2 = 0.5 * (sections.area[i] + sections.area[i - 1]);
         const double g3Mm4 = 0.5 * (sections.gapCubed[i] + sections.gapCubed[i - 1]);
@@ -74,7 +76,7 @@ void FlowModel::advance(double time, double dt, double minimumArea, double previ
             || !std::isfinite(areaMm2) || !std::isfinite(g3Mm4))
             fail(i, "nonmonotonic x or nonfinite section average");
         if (areaMm2 > kAreaClosedMm2) invAreaIntegral += dxMm * 1.0e3 / areaMm2;
-        if (i <= selection.sepIndex && g3Mm4 > 1.0e-12)
+        if (g3Mm4 > 1.0e-12)
             invGapCubedIntegral += dxMm * 1.0e9 / g3Mm4;
     }
     if (!std::isfinite(invAreaIntegral) || !std::isfinite(invGapCubedIntegral))

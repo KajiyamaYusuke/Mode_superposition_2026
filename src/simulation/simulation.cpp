@@ -126,7 +126,7 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "right_frequency = " << rightFrequencyFile.string() << "\n"
              << "left_surface_nas = " << leftSurfaceNasFile.string() << "\n"
              << "right_surface_nas = " << rightSurfaceNasFile.string() << "\n"
-             << "flow_sections = 81\n"
+             << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
