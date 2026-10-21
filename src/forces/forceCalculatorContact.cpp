@@ -1,4 +1,7 @@
 #include "ForceCalculator.h"
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+#include "KanayaDiagnostics.h"
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -10,6 +13,9 @@
 #endif
 
 void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnosticOnly) {
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    KanayaDiagnostics::beginContact(diagnosticOnly, contactIter);
+#endif
 
     const bool savedContactFlag = contactFlag;
     const double savedMaxForceDiff = max_force_diff;
@@ -539,6 +545,10 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
 
             const double FxR =  F * nx;
             const double FyR =  F * ny;
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+            KanayaDiagnostics::contact(j, xContact, pairZMm, pen,
+                                      FxL, FyL, FxR, FyR, excluded);
+#endif
 
             if (pen > maxPenetration) {
                 maxPenetration = pen;

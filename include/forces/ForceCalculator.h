@@ -39,6 +39,10 @@ public:
                     State& stL, State& stR, const SimulationParams& sp);
 
     void initialize();
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    const ChannelSections& diagnosticSections() const { return sections; }
+    const FlowModel& diagnosticFlow() const { return flowModel; }
+#endif
     // Coupling sequence called by Simulation.
     void updateChannelSections();
     void applyFluidLoads(double t, int n);

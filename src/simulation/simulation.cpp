@@ -1,6 +1,9 @@
 
 #define _USE_MATH_DEFINES  
 #include "Simulation.h"
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+#include "KanayaDiagnostics.h"
+#endif
 #include "wavwrite.h"
 #include <iostream>
 #include <algorithm>
@@ -233,6 +236,9 @@ void Simulation::initialize(const fs::path& parameterFile) {
 }
 
 void Simulation::run() {
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    KanayaDiagnostics kanaya(*this);
+#endif
     std::cout << "[Simulation] Running..." << std::endl;
 
     double time_calcArea = 0.0;
@@ -355,10 +361,16 @@ void Simulation::run() {
 
 
         // 圧力の計算と、左右への力の分配
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.beginStep(n, t);
+#endif
 {        auto t0 = now();
         fCalc.applyFluidLoads(t, n);
         auto t1 = now();
         time_calcForce += elapsed_ms(t0, t1);}
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.afterFluid();
+#endif
 
         if (n % 5 == 0) {
             fa << std::setw(4) << n;
@@ -493,6 +505,9 @@ void Simulation::run() {
         auto t1 = now();
         time_f2mode += elapsed_ms(t0, t1); }
         ++total_f2mode_calls;
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.adoptedContact();
+#endif
 
         constexpr double newmark_beta_final = 0.275625;
         constexpr double newmark_gamma_final = 0.55;
@@ -532,6 +547,10 @@ void Simulation::run() {
         }
     
         // 状態の確定
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.endStep(icont_used_this_step,
+                       broke_by_convergence ? 1 : broke_by_no_contact ? 2 : 3);
+#endif
         stateL.uf2u();
         stateR.uf2u();
         auto t0 = now();
@@ -550,6 +569,9 @@ void Simulation::run() {
 
     }
     WavWriter::save(soundSignal, params.dt, (runDir / "wav" / "test_sound.wav").string());
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    kanaya.finish();
+#endif
     
     std::cout << "\n=== Timing Summary ===\n";
     std::cout << "calcArea  : " << time_calcArea  << " ms\n";

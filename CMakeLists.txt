@@ -6,6 +6,7 @@ set(CMAKE_CXX_COMPILER icpx)
 project(Simulation LANGUAGES CXX)
 
 option(PROFILE_CALCDIS "Enable calcDis profiling output" OFF)
+option(ENABLE_KANAYA_DIAGNOSTICS "Build opt-in read-only force/work diagnostics" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,6 +45,7 @@ set(SIMULATION_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/structure
     ${CMAKE_CURRENT_SOURCE_DIR}/include/fluid
     ${CMAKE_CURRENT_SOURCE_DIR}/include/forces
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/diagnostics
 )
 
 target_include_directories(simulation
@@ -60,8 +62,30 @@ if(PROFILE_CALCDIS)
     target_compile_definitions(simulation PRIVATE PROFILE_CALCDIS)
 endif()
 
+if(ENABLE_KANAYA_DIAGNOSTICS)
+    target_sources(simulation PRIVATE src/diagnostics/KanayaDiagnostics.cpp)
+    target_compile_definitions(simulation PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
+    if(ENABLE_KANAYA_DIAGNOSTICS)
+        get_target_property(KANAYA_TEST_SOURCES simulation SOURCES)
+        list(REMOVE_ITEM KANAYA_TEST_SOURCES src/main.cpp)
+        add_executable(test_kanaya_diagnostics tests/test_kanaya_diagnostics.cpp ${KANAYA_TEST_SOURCES})
+        target_include_directories(test_kanaya_diagnostics PRIVATE ${SIMULATION_INCLUDE_DIRS})
+        target_compile_definitions(test_kanaya_diagnostics PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+        target_link_libraries(test_kanaya_diagnostics PRIVATE OpenMP::OpenMP_CXX)
+        add_test(NAME kanaya_diagnostics COMMAND test_kanaya_diagnostics
+            ${CMAKE_SOURCE_DIR}/output/kanaya_diagnostic/validation/unit)
+        set_tests_properties(kanaya_diagnostics PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=2")
+    else()
+        get_target_property(KANAYA_TEST_SOURCES simulation SOURCES)
+        list(REMOVE_ITEM KANAYA_TEST_SOURCES src/main.cpp)
+        add_executable(kanaya_smoke_driver tests/test_kanaya_diagnostics.cpp ${KANAYA_TEST_SOURCES})
+        target_include_directories(kanaya_smoke_driver PRIVATE ${SIMULATION_INCLUDE_DIRS})
+        target_link_libraries(kanaya_smoke_driver PRIVATE OpenMP::OpenMP_CXX)
+    endif()
     add_executable(test_separation_selection
         tests/test_separation_selection.cpp
         src/fluid/separationSelection.cpp

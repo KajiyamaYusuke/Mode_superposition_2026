@@ -1,4 +1,7 @@
 #include "FlowModel.h"
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+#include "KanayaDiagnostics.h"
+#endif
 #include "FluidConstants.h"
 #include "SeparationSelection.h"
 
@@ -90,6 +93,9 @@ void FlowModel::advance(double time, double dt, double minimumArea, double previ
 }
 
 void FlowModel::calcFlowStep(double time, double dt, double minimumArea) {
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    KanayaDiagnostics::coefficients(0.0, 0.0, 0.0, false);
+#endif
     const int ng = sp_->N_sub, nv = sp_->N_vt;
     // The checked-in solver historically used 0.05 s although the model
     // documentation stated 0.10 s.  Preserve omitted-option runs exactly;
@@ -110,6 +116,9 @@ void FlowModel::calcFlowStep(double time, double dt, double minimumArea) {
         const double Lg1 = rho_ * glottalInertanceGeometry_;
         const double Rk1 = beta_*rho_/(minimumArea*minimumArea);
         const double Rv1 = 12.0 * mu_ * glottalViscousGeometry_;
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        KanayaDiagnostics::coefficients(Lg1, Rv1, Rk1, true);
+#endif
         double guess = currentUg_;
         for (int k=0;k<100;++k) {
             const double f = Rk1*std::abs(guess)*guess + Rv1*guess

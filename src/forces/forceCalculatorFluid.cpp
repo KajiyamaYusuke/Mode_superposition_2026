@@ -1,4 +1,7 @@
 #include "ForceCalculator.h"
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+#include "KanayaDiagnostics.h"
+#endif
 #include "FluidConstants.h"
 #include <algorithm>
 #include <cmath>
@@ -187,6 +190,9 @@ void ForceCalculator::applyFluidLoads(double t, int n) {
             fx = pressure * dA.x;
             fy = pressure * dA.y;
             fz = pressure * dA.z;
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+            KanayaDiagnostics::node(isLeft, i, j, pressure, dA.x, dA.y, dA.z, fx, fy, fz);
+#endif
         };
 
         for (int i = 1; i < nSurfaceSections - 1; i++) {
