@@ -28,10 +28,14 @@ private:
     ModalProjector modalProjector;
     FlowModel flowModel;
     int lastSeparationIndex_ = -1;
+    int lastFlowTerminalIndex_ = -1;
+    int lastPressureRecoveryIndex_ = -1;
+    int lastLegacyLoadEndExclusive_ = -1;
     double lastSeparationX_ = std::numeric_limits<double>::quiet_NaN();
     double lastBlendEndX_ = std::numeric_limits<double>::quiet_NaN();
     double lastSeparationPressure_ = std::numeric_limits<double>::quiet_NaN();
     SeparationSelection lastSeparationSelection_;
+    void applySwitchedFluidLoads(double t, int n);
 
 public:
     ForceCalculator(const Geometry& geomL, const Geometry& geomR, 
@@ -39,6 +43,10 @@ public:
                     State& stL, State& stR, const SimulationParams& sp);
 
     void initialize();
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    const ChannelSections& diagnosticSections() const { return sections; }
+#endif
+    const FlowModel& diagnosticFlow() const { return flowModel; }
     // Coupling sequence called by Simulation.
     void updateChannelSections();
     void applyFluidLoads(double t, int n);
@@ -59,6 +67,10 @@ public:
     double separationBlendEndX() const { return lastBlendEndX_; }
     double separationPressure() const { return lastSeparationPressure_; }
     double separationMinArea() const { return lastSeparationSelection_.minAreaMm2; }
+    int minimumSectionIndex() const { return lastSeparationSelection_.minIndex; }
+    int flowTerminalIndex() const { return lastFlowTerminalIndex_; }
+    int pressureRecoveryIndex() const { return lastPressureRecoveryIndex_; }
+    int legacyLoadEndExclusive() const { return lastLegacyLoadEndExclusive_; }
     double separationTargetArea() const { return lastSeparationSelection_.targetAreaMm2; }
     double separationArea() const { return lastSeparationSelection_.sepAreaMm2; }
     bool separationUsedFallback() const { return lastSeparationSelection_.usedFallback; }

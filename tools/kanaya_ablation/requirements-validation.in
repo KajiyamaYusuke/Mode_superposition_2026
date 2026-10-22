@@ -1,0 +1,7 @@
+# Optional Python validation environment; not needed for the C++ simulation.
+numpy>=2.0
+scipy
+pandas
+matplotlib
+SciencePlots
+vtk

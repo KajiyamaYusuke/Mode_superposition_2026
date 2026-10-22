@@ -14,11 +14,15 @@
 #include <string>
 #include <bits/stdc++.h>
 #include <iostream>
+#include "GlottalMethodOptions.h"
 
 /// Simulation parameters (読み取り専用の設定群)
 struct SimulationParams {
     // デフォルトコンストラクタ（メンバ初期化子で既に初期値を定義）
     SimulationParams() = default;
+    GlottalMethodOptions glottalMethods;
+    bool writeDeformationVtu = true;
+    std::string upstreamAcousticProfile = "modern";
 
     // --- 数値パラメータ ---
     int    nmode   = 20;       // モード数
@@ -101,6 +105,7 @@ struct SimulationParams {
     // --- IO / 検証 ---
     // filename を読み込み、エラー文字列は err に格納して false を返す
     bool loadFromFile(const fs::path& filename, std::string& err);
+    void setUpstreamAcousticProfile(const std::string& profile);
 
     // パラメータの整合性チェック。問題があれば err に入れて false を返す
     bool validate(std::string& err) const;

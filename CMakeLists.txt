@@ -6,6 +6,7 @@ set(CMAKE_CXX_COMPILER icpx)
 project(Simulation LANGUAGES CXX)
 
 option(PROFILE_CALCDIS "Enable calcDis profiling output" OFF)
+option(ENABLE_KANAYA_DIAGNOSTICS "Build opt-in read-only force/work diagnostics" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,11 +32,15 @@ add_executable(simulation
     src/fluid/channelSections.cpp
     src/fluid/flowModel.cpp
     src/fluid/separationSelection.cpp
+    src/fluid/legacyChannelArea.cpp
+    src/fluid/legacyFlowCoefficients.cpp
+    src/fluid/legacyWallPressure.cpp
     src/forces/forceCalculator.cpp
     src/forces/forceCalculatorFluid.cpp
     src/forces/forceCalculatorContact.cpp
     src/forces/modalProjector.cpp
     src/forces/surfaceLoad.cpp
+    src/forces/legacySurfacePressureLoad.cpp
 )
 
 set(SIMULATION_INCLUDE_DIRS
@@ -44,6 +49,7 @@ set(SIMULATION_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/structure
     ${CMAKE_CURRENT_SOURCE_DIR}/include/fluid
     ${CMAKE_CURRENT_SOURCE_DIR}/include/forces
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/diagnostics
 )
 
 target_include_directories(simulation
@@ -60,8 +66,55 @@ if(PROFILE_CALCDIS)
     target_compile_definitions(simulation PRIVATE PROFILE_CALCDIS)
 endif()
 
+if(ENABLE_KANAYA_DIAGNOSTICS)
+    target_sources(simulation PRIVATE src/diagnostics/KanayaDiagnostics.cpp)
+    target_compile_definitions(simulation PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
+    if(ENABLE_KANAYA_DIAGNOSTICS)
+        get_target_property(KANAYA_TEST_SOURCES simulation SOURCES)
+        list(REMOVE_ITEM KANAYA_TEST_SOURCES src/main.cpp)
+        add_executable(test_kanaya_diagnostics tests/test_kanaya_diagnostics.cpp ${KANAYA_TEST_SOURCES})
+        target_include_directories(test_kanaya_diagnostics PRIVATE ${SIMULATION_INCLUDE_DIRS})
+        target_compile_definitions(test_kanaya_diagnostics PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+        target_link_libraries(test_kanaya_diagnostics PRIVATE OpenMP::OpenMP_CXX)
+        add_test(NAME kanaya_diagnostics COMMAND test_kanaya_diagnostics
+            ${CMAKE_BINARY_DIR}/validation/kanaya_unit)
+        set_tests_properties(kanaya_diagnostics PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=2")
+    else()
+        get_target_property(KANAYA_TEST_SOURCES simulation SOURCES)
+        list(REMOVE_ITEM KANAYA_TEST_SOURCES src/main.cpp)
+        add_executable(kanaya_smoke_driver tests/test_kanaya_diagnostics.cpp ${KANAYA_TEST_SOURCES})
+        target_include_directories(kanaya_smoke_driver PRIVATE ${SIMULATION_INCLUDE_DIRS})
+        target_link_libraries(kanaya_smoke_driver PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    add_executable(test_legacy_glottal_methods tests/test_legacy_glottal_methods.cpp ${KANAYA_TEST_SOURCES})
+    target_include_directories(test_legacy_glottal_methods PRIVATE ${SIMULATION_INCLUDE_DIRS})
+    target_link_libraries(test_legacy_glottal_methods PRIVATE OpenMP::OpenMP_CXX)
+    if(ENABLE_KANAYA_DIAGNOSTICS)
+        target_compile_definitions(test_legacy_glottal_methods PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+    endif()
+    add_test(NAME legacy_glottal_methods COMMAND test_legacy_glottal_methods)
+    set_tests_properties(legacy_glottal_methods PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=2")
+    add_executable(test_upstream_acoustics tests/test_upstream_acoustics.cpp ${KANAYA_TEST_SOURCES})
+    target_include_directories(test_upstream_acoustics PRIVATE ${SIMULATION_INCLUDE_DIRS})
+    target_compile_definitions(test_upstream_acoustics PRIVATE _GLIBCXX_ASSERTIONS)
+    target_link_libraries(test_upstream_acoustics PRIVATE OpenMP::OpenMP_CXX)
+    if(ENABLE_KANAYA_DIAGNOSTICS)
+        target_compile_definitions(test_upstream_acoustics PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+    endif()
+    add_test(NAME upstream_acoustics COMMAND test_upstream_acoustics)
+    set_tests_properties(upstream_acoustics PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=2")
+    set(REPLAY_ENGINE_SOURCES ${KANAYA_TEST_SOURCES})
+    list(REMOVE_ITEM REPLAY_ENGINE_SOURCES src/fluid/channelSections.cpp)
+    add_executable(kanaya_section_replay tests/kanaya_section_replay.cpp ${REPLAY_ENGINE_SOURCES})
+    target_include_directories(kanaya_section_replay PRIVATE ${SIMULATION_INCLUDE_DIRS})
+    target_link_libraries(kanaya_section_replay PRIVATE OpenMP::OpenMP_CXX)
+    if(ENABLE_KANAYA_DIAGNOSTICS)
+        target_compile_definitions(kanaya_section_replay PRIVATE ENABLE_KANAYA_DIAGNOSTICS)
+    endif()
     add_executable(test_separation_selection
         tests/test_separation_selection.cpp
         src/fluid/separationSelection.cpp
