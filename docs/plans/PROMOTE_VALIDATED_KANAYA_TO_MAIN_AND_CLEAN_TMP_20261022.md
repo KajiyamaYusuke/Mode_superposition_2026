@@ -3,7 +3,17 @@
 作成日：2026-10-22
 対象：KajiyamaYusuke/Mode_superposition_2026（WSL上の実体は最初に確認）
 依頼：既存の検証済み実装を正式mainへ取り込み、ユーザーが普段使う本番作業ディレクトリを更新し、検証用の/tmp worktreeとローカル一時ブランチを整理する。
-**削除は全移行・検証・保存が完了した最後だけ。main未反映のソースを消さない。**
+**削除は全移行・検証・必要最小限の記録保存が完了した最後だけ。main未反映のソースを消さない。**
+
+## 重要な追加方針：Cドライブ容量優先（2026-10-22）
+
+ユーザーから、Cドライブ容量不足のため**今回の検証結果（大容量データ）を最終的に削除する可能性が高い**との連絡あり。**現時点でユーザーが即時削除を指示したわけではない。自動削除はしない。** ただし新規の1GB級アーカイブ複製は作らず、main移行前後の安全を保ったうえで削除可能な分類とコマンドを報告する。
+
+- **必須保存：** 最終ソース（Git commit/main）、新規ヘッダ/実装/テスト/解析スクリプト、再現可能な入力設定（モデルファイル名、param、実効オプションとコミットSHA）、比較レポート、R0/S2/S3の主要な集計CSV（最大・最小面積、開口周期・周波数、エネルギー、検証成否）、変更・検証manifest。最小限の容量で再現条件を残す。
+- **任意保存：** 生波形の小容量CSV（特にR0の最狭面積、流量、変位）。容量に余裕がなければ最小限の時系列だけ。
+- **削除候補：** 再生成可能なVTU時系列、巨大なmodal-native履歴、重複した過去の検証output、試行の一時ログ、重複build、過去archiveの重複バックアップ。**元のモデル入力や唯一の原本・mainへの未反映コードは削除しない。**
+- 前回の約1.33GBアーカイブ（previous/next）、約6.49GBの生成VTUなどは容量点検対象。既に存在するarchiveをさらに複製してはいけない。Git反映・参照検証が済んだ後なら大容量部分は保存不要と判断できるが、**削除対象一覧・推定回収容量・再生成可否をユーザーへ提示し、削除は明示対象のみ**とする。
+- WSL2のデータがCドライブ上の ext4.vhdx にある場合、Linux内部で削除してもWindowsから見たVHDXサイズがすぐには縮まらないことがある。必要なら利用中プロセスを止めて安全に仮想ディスクを縮小する別工程を案内する。**作業中にVHDXを直接削除・圧縮しない。**
 
 ## 0. 最優先の前提と禁止事項
 
@@ -19,7 +29,7 @@
 
 1. 対象3ディレクトリの存在、git remote、branch/HEAD、git status --porcelain=v1、git worktree list --porcelain、未追跡一覧、容量を記録する。実際のローカル名・pathが報告と違う場合は発見した値を使い、出典と理由を記録。
 2. tmp側から git diff --binary HEAD と git diff --cached --binary を採取。未追跡ファイルは git ls-files --others --exclude-standard で一覧化し、src/include/tests/tools/docs/CMake等の実装と生成出力を分類。**未追跡ファイルはGit diffに含まれない**ため、コピー・コミット対象漏れを防ぐ。
-3. tmp実装・必要な実行設定・参照データ・レポート・新規解析ツールを、/home/kajiyama/code/kanaya_validation_archive/ 配下の新たな日付付きpromotionディレクトリへ保存。既存previous/next/には上書きしない。実行バイナリ／モデルファイル等、再現性に不可欠な参照も継承可能か確認。対象一覧・サイズ・SHA256のmanifestを作る。巨大な再生成可能VTUは除外可だが除外理由と保存済みmodal-native履歴を記録。
+3. tmp実装の**未コミットソースと未追跡ソース・テスト・解析ツール**、必要な小容量param・比較レポート・集計CSVのみを保存。すでにprevious/next/アーカイブに存在する同一SHAのファイルは再コピーしない。Git差分/コミットやファイルリスト・SHA256 manifestで復元可能性を確保し、**新たな大容量promotionアーカイブを作らない**。巨大なVTU・modal-native・ビルド・実行バイナリの複製を必須にしない。元のモデル入力は既存の本番フォルダに保持する。
 4. 追加されたR0 VTU時系列エクスポートが実装済みか調べる。**指示書がGitHubに存在するだけなら、機能を実装済みと誤認しない。** 実装されていれば検証済みか確認し、安全に同梱できる場合だけ対象へ含める。
 5. mainまたは本番環境に未コミットのユーザー変更がある場合は保護する。**既存のdirty状態を理由に無断で退避・破棄しない。** 独立したクリーンworktreeで統合作業を行う。
 
@@ -45,11 +55,11 @@ git -C /home/kajiyama/code/Mode_superposition_2026 worktree add \
 1. 差分と対象全ファイルの確認（git diff --check、git status、CMakeに追加cppが全て列挙されること、ビルド時に未定義参照がないこと、同名関数重複がないこと）。
 2. icpx Release、診断通常OFFと必要なら診断ONの2構成を**別build-dir**でビルド。OpenMP有効、fast-mathなし。必要なパスを確認して手元のモデルを使用。CTest全件＋Pythonテスト全件を実行。
 3. 無指定modern、明示modern、旧流体6フラグ、upstreamAcousticProfile=legacy_main、異常なprofileの拒否、VTUオプションについて短いsmoke test。最小限、前回と同じ80/300stepのbitwise回帰とS3回路初期化9係数／オラクル比較。入力・バイナリ・出力を同じ条件で比較し、異なる条件同士で数値を比較しない。
-4. 本番へ反映する最終パッケージとして、0.2s R0または必要ならS3を**少なくとも1条件**再実行して前回の保存済み結果と照合（同一物理入力のAmin・Ug・圧力・Q・接触・波形を比較）。前回の全bitwise一致がコンパイラ/ビルド環境の影響で維持できなければ誤差の原因・量を記載し、物理差を隠さない。
+4. 本番へ反映する最終パッケージとして、**短時間の再現テストと前回の保存済み数値回帰を優先**。過去の参照CSVと一致を照合でき、実装に物理変更がなければ0.2sフル再計算を自動で追加しない。フル再実行が不可欠な場合もVTU出力OFF・ケース専用の小容量出力で**最大1条件**に限定し、終了後に必要なCSVと検証結果だけ保持する。前回の全bitwise一致がコンパイラ/ビルド環境の影響で維持できなければ誤差の原因・量を記載し、物理差を隠さない。
 5. 0.2sの主計算の高速化は前回実測に従う。単独計算ならOMP=8を第一候補、実際のcpuset/NUMA/SMTを確認。OMP_PROC_BIND=close、OMP_PLACES=cores、BLAS/MKL/BLISスレッド=1を候補にし、既知の高速affinityを選ぶ。ビルド並列は利用可能CPU数とメモリに合わせる。独立比較を2本同時に走らせる場合だけ4 threads×2ジョブ等の前回ベンチを使う。**OpenMP 16を機械的に使うこと、同じCPUへの過剰バインド、巨大VTU出力による時間・ディスク浪費を避ける。**
-6. 再計算は合否判定に必要な最少本数。既存R0/S2/S3出力を再利用し、スモーク用と本番検証用を別dirとし、出力上書きを禁止。結果とvalidation reportを保存し、統合前後のモード数・接触係数・質量・ζ・dt・音響回路が一致することを列挙。
+6. 再計算は合否判定に必要な最少本数。既存R0/S2/S3の**集計・参照値を優先**し、スモーク用と検証用を別dirとし、ユーザー原本への出力上書きを禁止。重要な集計CSVとvalidation reportのみ永続保存し、容量見積もりを報告。統合前後のモード数・接触係数・質量・ζ・dt・音響回路が一致することを列挙。
 
-**停止条件**：必要ファイルが未保存、差分移植漏れ、Release/CTest失敗、modern default変化の説明不能、物理出力差が説明不能、入力データ不足、ローカルmainの保護不能の場合はmainを変更せず報告する。失敗を隠すために物理パラメータを調整しない。
+**停止条件**：必要な**ソース/再現設定/小容量の検証記録**が未保存、差分移植漏れ、Release/CTest失敗、modern default変化の説明不能、物理出力差が説明不能、入力データ不足、ローカルmainの保護不能の場合はmainを変更せず報告する。失敗を隠すために物理パラメータを調整しない。
 
 ## 4. mainへの反映と「本番環境」の更新
 
@@ -65,11 +75,11 @@ git -C /home/kajiyama/code/Mode_superposition_2026 worktree add \
 消す対象を厳密に限定：
 - worktree = /tmp/simulation-main-kanaya-ablation-20261021
 - local branch = codex/kanaya-legacy-ablation-20261021
-- **消してはいけないもの：** /home/kajiyama/code/kanaya_validation_archive/**、/home/kajiyama/code/simulation-main、本番のMode_superposition_2026、main、検証用とは無関係の別worktree、ユーザーの任意の未コミット変更。
+- **この自動整理では消してはいけないもの：** /home/kajiyama/code/kanaya_validation_archive/**、/home/kajiyama/code/simulation-main、本番のMode_superposition_2026、main、検証用とは無関係の別worktree、ユーザーの任意の未コミット変更。古いarchive内の大容量データは**別途削除候補に分類して提示**するが、今回のtmp整理と同時に無断削除しない。
 
 削除の必要条件：
 1. mainに取り込むべき追跡・未追跡の全実装が反映済み。統合元とmainをファイルリスト・SHA／意図した差分で監査。
-2. 前回および今回の必要入力・結果・報告が永続archiveにある。archive manifestと主要SHAの一致を再確認。
+2. 前回および今回の**必要なソース・実効入力設定・小容量の主要比較結果・レポート**がmain/既存の永続保存先に残っている。manifestと主要SHAを確認。GB級生出力・重複VTU・modal-nativeの全量保存は削除ゲートとしない。
 3. GitHub main反映と本番ローカルbuild/起動テストが完了。未確認ならtmpは残して保留。
 4. tmpのgit statusとworktree情報を最終保存して、別用途の未コミットユーザーファイルがないことを確認。
 
@@ -79,7 +89,7 @@ git -C /home/kajiyama/code/Mode_superposition_2026 worktree list --porcelain
 # Gitのworktree管理コマンドで対象/tmpだけを削除する。
 git -C /home/kajiyama/code/Mode_superposition_2026 worktree remove \
   /tmp/simulation-main-kanaya-ablation-20261021
-# 全ての変更がmainとアーカイブに確実に保存されているが、
+# mainへ必要な全ソースが移行し、小容量の再現資料が保存されているが、
 # tmpに残る未コミット生成物ゆえ通常removeが拒否された場合に限り、
 # 対象パスを再検査して worktree remove --force を利用してよい。
 git -C /home/kajiyama/code/Mode_superposition_2026 branch -d \
@@ -94,6 +104,6 @@ git -C /home/kajiyama/code/Mode_superposition_2026 branch -d \
 最終的に次を日本語で報告：
 - main取り込み後のURL・commit SHA・PR番号、変更した主要ファイル、実際の本番ディレクトリとそのHEAD。
 - modernがデフォルトで変わっていないことと切替オプションの動作状況。R0/S3参照と本番検証の一致状況、CTest/Pythonの件数、フル計算の実測所要時間/CPU/使用出力dir。
-- 保存先・移行元/先の保護監査とSHA、tmpのworktree/branchを削除したか、残した場合の理由。
+- 残した小容量の保存先・移行元/先の保護監査とSHA、tmpのworktree/branchを削除したか、残した場合の理由。さらにCドライブ容量圧迫の原因となる**削除候補（絶対パス/容量/再生成性/削除時の影響）**と、削除後にWSL仮想ディスクのサイズ縮小が必要かを簡潔に報告する。
 - 未反映・未検証の機能（VTU exporterなど）は明示。旧成功モデル全体の再現や安定リミットサイクルの証明を、今回の本番昇格によって新たに達成したとは言わない。
 - **main反映／本番環境更新／tmp削除の3工程を個別に成功・未完了・保留で報告すること。**
