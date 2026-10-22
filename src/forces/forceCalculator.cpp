@@ -1,5 +1,6 @@
 #include "ForceCalculator.h"
 #include <iostream>
+#include "LegacyGlottalMethods.h"
 
 ForceCalculator::ForceCalculator(const Geometry& geomL_, const Geometry& geomR_,
                                  const ModeData& mdL_, const ModeData& mdR_,
@@ -40,7 +41,7 @@ void ForceCalculator::initialize() {
     prevFdisYR.assign(geomR.nxsup, std::vector<double>(geomR.nsurfz, 0.0));
 
     // --- 共有変数の初期化 ---
-    constexpr int flowSectionCount = 50;
+    const int flowSectionCount = sp.glottalMethods.area ? geomL.nxsup : 50;
     sections.resize(geomL, geomR, flowSectionCount);
     psurf.assign(flowSectionCount, 0.0);
     Ug.assign(stateL.nSteps, 0.0);       // ステップ数はL/R共通
@@ -74,5 +75,9 @@ void ForceCalculator::projectLoadsToModes() {
 }
 
 void ForceCalculator::updateChannelSections() {
+    if (sp.glottalMethods.area) {
+        LegacyGlottal::buildArea(geomL, stateL, geomR, stateR, sections);
+        return;
+    }
     sectionBuilder.build(geomL, stateL, geomR, stateR, sections);
 }

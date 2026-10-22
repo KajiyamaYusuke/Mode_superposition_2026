@@ -1,6 +1,9 @@
 
 #define _USE_MATH_DEFINES  
 #include "Simulation.h"
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+#include "KanayaDiagnostics.h"
+#endif
 #include "wavwrite.h"
 #include <iostream>
 #include <algorithm>
@@ -128,6 +131,24 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "right_surface_nas = " << rightSurfaceNasFile.string() << "\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
+    const auto& gm=params.glottalMethods;
+    manifest << "glottal_method_profile = " << gm.profile << "\n"
+             << "legacy_area = " << gm.area << "\n"
+             << "legacy_flow_coefficients = " << gm.flowCoefficients << "\n"
+             << "legacy_wall_viscosity = " << gm.wallViscosity << "\n"
+             << "legacy_separation = " << gm.separation << "\n"
+             << "legacy_post_separation = " << gm.postSeparation << "\n"
+             << "legacy_surface_pressure_load = " << gm.surfacePressureLoad << "\n"
+             << "legacy_contact = 0\nlegacy_integrator = 0\n"
+             << "legacy_reference = https://github.com/KajiyamaYusuke/Mode_superposition/tree/main ; archived source SHA256 in case manifest\n"
+             << "write_deformation_vtu = " << params.writeDeformationVtu << "\n";
+    manifest << "rho_kg_m3 = " << params.rho << "\nmu_Pa_s = " << params.mu
+             << "\nmass_kg = " << params.mass << "\nc_sound_m_s = " << params.c_sound
+             << "\ninlet_radius_m = " << params.r_inlet << "\ninlet_length_m = " << params.L_inlet
+             << "\nsubglottal_radius_m = " << params.r_sub << "\nsubglottal_length_m = " << params.L_sub
+             << "\nsubglottal_sections = " << params.N_sub
+             << "\nvocal_tract_radius_m = " << params.r_vt << "\nvocal_tract_length_m = " << params.L_vt
+             << "\nvocal_tract_sections = " << params.N_vt << "\n";
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
     geomL.loadFromVTK(leftModeFile.string());
@@ -228,11 +249,29 @@ void Simulation::initialize(const fs::path& parameterFile) {
         omegaR[i] = 2.0 * M_PI * mdataR.frequencies[i];
 
     fCalc.initialize();
+    manifest << "effective_flow_sections = " << fCalc.harea.size() << "\n";
+    manifest << std::setprecision(17)
+             << "upstream_acoustic_profile = " << params.upstreamAcousticProfile << "\n"
+             << "upstream_source_commit = 58cd92281aa6a36c732baa680d7817acbc98ddb2\n"
+             << "subglottal_Lu_definition = "
+             << (params.upstreamAcousticProfile=="legacy_main"?"rho*dx/A":"rho*dx/(2*A)") << "\n";
+    std::ofstream acousticCoefficients(runDir / "csv" / "acoustic_coefficients.csv");
+    acousticCoefficients << "coefficient,value,unit\n" << std::setprecision(17);
+    const std::array<const char*,9> coefficientNames{"Lui","Cui","Lu","Cu","R2","La","Ca","Lr","Rr"};
+    const std::array<const char*,9> coefficientUnits{"Pa_s2_m-3","m3_Pa-1","Pa_s2_m-3","m3_Pa-1","Pa_s_m-3","Pa_s2_m-3","m3_Pa-1","Pa_s2_m-3","Pa_s_m-3"};
+    const auto values = fCalc.diagnosticFlow().acousticCoefficients();
+    for (std::size_t i=0; i<values.size(); ++i) {
+        manifest << "acoustic_" << coefficientNames[i] << " = " << values[i] << "\n";
+        acousticCoefficients << coefficientNames[i] << ',' << values[i] << ',' << coefficientUnits[i] << '\n';
+    }
 
     std::cout << "[Simulation] Initialization complete." << std::endl;
 }
 
 void Simulation::run() {
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    KanayaDiagnostics kanaya(*this);
+#endif
     std::cout << "[Simulation] Running..." << std::endl;
 
     double time_calcArea = 0.0;
@@ -284,6 +323,22 @@ void Simulation::run() {
     std::ofstream fgapcubed(datDir / "gap_cubed.dat");
     std::ofstream fseparation(datDir / "separation.dat");
     std::ofstream fdispXY(datDir / "displace_xy.dat");
+    std::ofstream methodTrace;
+    std::ofstream acousticTrace;
+    const char* acousticTraceFlag = std::getenv("SIMULATION_ACOUSTIC_TRACE");
+    if (acousticTraceFlag && std::string(acousticTraceFlag)=="1") {
+        acousticTrace.open(runDir / "csv" / "acoustic_trace.csv");
+        acousticTrace << "step,time_s,Ug_m3_s,previous_Ug_m3_s,Pg_Pa,Pd0_after_Pa,Pout_Pa,lung_Pa,NR_active,NR_converged,NR_iterations,NR_residual_Pa,NR_quadratic_Pa,NR_viscous_Pa,NR_inertia_Pa,NR_downstream_Pa,NR_upstream_Pa";
+        for (int j=0; j<=params.N_sub; ++j) acousticTrace << ",Uu_" << j << "_m3_s";
+        for (int j=0; j<=params.N_sub+1; ++j) acousticTrace << ",Pu_accum_" << j;
+        for (int j=0; j<=params.N_sub; ++j) acousticTrace << ",Pu_physical_" << j << "_Pa";
+        acousticTrace << '\n' << std::setprecision(17);
+    }
+    if (params.glottalMethods.any()) {
+        methodTrace.open(runDir / "csv" / "glottal_methods.csv");
+        methodTrace << "step,time_s,area_min_index,flow_terminal_index,wall_break_index,wall_end_index,legacy_load_end_exclusive,x_area_min_mm,x_wall_end_mm\n";
+        methodTrace << std::setprecision(17);
+    }
     fa << "# step  area[mm^2]\n";
     fu << "# time_s  uyL_mm  uyR_mm\n";
     fp << "# step  pressure[Pa]\n"; 
@@ -355,10 +410,36 @@ void Simulation::run() {
 
 
         // 圧力の計算と、左右への力の分配
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.beginStep(n, t);
+#endif
 {        auto t0 = now();
         fCalc.applyFluidLoads(t, n);
         auto t1 = now();
         time_calcForce += elapsed_ms(t0, t1);}
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.afterFluid();
+#endif
+        if (params.glottalMethods.any())
+            methodTrace << n << ',' << t << ',' << fCalc.minimumSectionIndex() << ','
+                << fCalc.flowTerminalIndex() << ',' << fCalc.pressureRecoveryIndex() << ','
+                << fCalc.separationIndex() << ',' << fCalc.legacyLoadEndExclusive() << ','
+                << fCalc.sectionX(fCalc.minimumSectionIndex()) << ',' << fCalc.separationX() << '\n';
+        if (acousticTrace.is_open()) {
+            const auto& flow = fCalc.diagnosticFlow();
+            const auto& nr = flow.newtonTrace();
+            const auto c = flow.acousticCoefficients();
+            acousticTrace << n << ',' << t << ',' << flow.flowRate() << ',' << nr.previousFlow << ','
+                << flow.glottalPressure() << ',' << flow.downstreamPressure().front() << ','
+                << flow.outletPressure() << ',' << flow.lungPressure() << ','
+                << nr.active << ',' << nr.converged << ',' << nr.iterations << ',' << nr.residual;
+            for (double value : nr.terms) acousticTrace << ',' << value;
+            for (double value : flow.upstreamFlow()) acousticTrace << ',' << value;
+            for (double value : flow.upstreamPressure()) acousticTrace << ',' << value;
+            for (int j=0; j<=params.N_sub; ++j)
+                acousticTrace << ',' << params.dt/(j==0?c[1]:c[3])*flow.upstreamPressure()[j];
+            acousticTrace << '\n';
+        }
 
         if (n % 5 == 0) {
             fa << std::setw(4) << n;
@@ -493,6 +574,9 @@ void Simulation::run() {
         auto t1 = now();
         time_f2mode += elapsed_ms(t0, t1); }
         ++total_f2mode_calls;
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.adoptedContact();
+#endif
 
         constexpr double newmark_beta_final = 0.275625;
         constexpr double newmark_gamma_final = 0.55;
@@ -532,12 +616,16 @@ void Simulation::run() {
         }
     
         // 状態の確定
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+        kanaya.endStep(icont_used_this_step,
+                       broke_by_convergence ? 1 : broke_by_no_contact ? 2 : 3);
+#endif
         stateL.uf2u();
         stateR.uf2u();
         auto t0 = now();
 
         // 3Dモデル出力
-        if (n % 20 == 0 && params.nstep-n <= 5000) {
+        if (params.writeDeformationVtu && n % 20 == 0 && params.nstep-n <= 5000) {
             writeVTKCombined(num, geomL, stateL, geomR, stateR, vtuResultDir.string(), 20);
             num++;
         }
@@ -550,6 +638,9 @@ void Simulation::run() {
 
     }
     WavWriter::save(soundSignal, params.dt, (runDir / "wav" / "test_sound.wav").string());
+#ifdef ENABLE_KANAYA_DIAGNOSTICS
+    kanaya.finish();
+#endif
     
     std::cout << "\n=== Timing Summary ===\n";
     std::cout << "calcArea  : " << time_calcArea  << " ms\n";

@@ -47,6 +47,17 @@ static int parseIntStrict(const std::string& value, const std::string& key) {
     return parsed;
 }
 
+void SimulationParams::setUpstreamAcousticProfile(const std::string& profile) {
+    if (profile != "modern" && profile != "legacy_main")
+        throw std::runtime_error("unknown upstreamAcousticProfile: " + profile);
+    upstreamAcousticProfile = profile;
+    const SimulationParams defaults;
+    r_inlet = profile == "legacy_main" ? 0.15 : defaults.r_inlet;
+    L_inlet = profile == "legacy_main" ? 0.50 : defaults.L_inlet;
+    L_sub = profile == "legacy_main" ? 0.25 : defaults.L_sub;
+    N_sub = profile == "legacy_main" ? 3 : defaults.N_sub;
+}
+
 bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) {
     std::ifstream ifs(filename);
     if (!ifs) { err = "Cannot open parameter file"; return false; }
@@ -100,6 +111,9 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
         modeSelection.clear();
 
         std::set<std::string> namedParameters;
+        std::string glottalProfile = "modern";
+        std::string upstreamProfile = "modern";
+        std::map<std::string, bool> legacyOverrides;
 
         // Optional trailing values, in order:
         // forceDirection (0/1), contactReferenceFrequencyHz,
@@ -139,7 +153,23 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
                 }
             } else {
                 if (rhs.empty()) throw std::runtime_error(key + " must not be empty");
-                if (key == "leftfrequencyfile") leftFrequencyFile = rhs;
+                if (key == "glottalmethodprofile") glottalProfile = toLower(rhs);
+                else if (key == "upstreamacousticprofile") upstreamProfile = toLower(rhs);
+                else if (key == "legacyarea" || key == "legacyflowcoefficients"
+                    || key == "legacywallviscosity" || key == "legacyseparation"
+                    || key == "legacypostseparation" || key == "legacysurfacepressureload"
+                    || key == "legacycontact" || key == "legacyintegrator") {
+                    const int enabled = parseIntStrict(rhs, key);
+                    if (enabled != 0 && enabled != 1) throw std::runtime_error(key + " must be 0 or 1");
+                    legacyOverrides[key] = enabled != 0;
+                }
+                else if (key == "writedeformationvtu") {
+                    const int enabled = parseIntStrict(rhs, key);
+                    if (enabled != 0 && enabled != 1) throw std::runtime_error(key + " must be 0 or 1");
+                    writeDeformationVtu = enabled != 0;
+                }
+                else if (key == "vocaltractlengthm") L_vt = parseDoubleStrict(rhs,key);
+                else if (key == "leftfrequencyfile") leftFrequencyFile = rhs;
                 else if (key == "rightfrequencyfile") rightFrequencyFile = rhs;
                 else if (key == "leftmodefile") leftModeFile = rhs;
                 else if (key == "rightmodefile") rightModeFile = rhs;
@@ -163,6 +193,8 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
                 else throw std::runtime_error("unknown named parameter: " + key);
             }
         }
+        glottalMethods.configure(glottalProfile, legacyOverrides);
+        setUpstreamAcousticProfile(upstreamProfile);
         std::size_t optionalIndex = 0;
         if (!optional.empty()) {
             const double first = std::stod(optional[0]);
@@ -189,6 +221,19 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
 }
 
 bool SimulationParams::validate(std::string& err) const {
+    if (upstreamAcousticProfile != "modern" && upstreamAcousticProfile != "legacy_main") {
+        err = "unknown upstreamAcousticProfile"; return false;
+    }
+    if (upstreamAcousticProfile == "legacy_main"
+        && (r_inlet != 0.15 || L_inlet != 0.50 || L_sub != 0.25 || N_sub != 3)) {
+        err = "legacy_main requires its complete upstream circuit preset"; return false;
+    }
+    if (glottalMethods.any() && iforce != 0) {
+        err = "legacy fluid methods require iforce=0"; return false;
+    }
+    if (glottalMethods.any() && zetaL != zetaR) {
+        err = "legacy comparisons require equal left/right damping"; return false;
+    }
     if (nmode <= 0) { err = "nmode must be > 0"; return false; }
     std::set<int> selectedModes;
     for (int modeNumber : modeSelection) {
@@ -207,6 +252,7 @@ bool SimulationParams::validate(std::string& err) const {
     if (ncont < 0)  { err = "ncont must be >= 0"; return false; }
     if (N_sub < 1)  { err = "N_sub must be >= 1"; return false; }
     if (N_vt < 1)   { err = "N_vt must be >= 1"; return false; }
+    if (!std::isfinite(L_vt) || L_vt < 0.) { err = "vocalTractLengthM must be finite and >=0"; return false; }
     if (iforce < 0 || iforce > 1) {
         err = "iforce must be 0 (flow) or 1 (prescribed force)";
         return false;
@@ -261,6 +307,7 @@ bool SimulationParams::validate(std::string& err) const {
 
 void SimulationParams::print(std::ostream& os) const {
     os << "SimulationParams:\n";
+    os << "  glottalMethodProfile = " << glottalMethods.profile << "\n";
     os << "  nmode   = " << nmode << "\n";
     os << "  modeSelection = ";
     if (modeSelection.empty()) {
