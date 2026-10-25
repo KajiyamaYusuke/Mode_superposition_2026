@@ -63,6 +63,21 @@ struct SimulationParams {
     double initialGapMm = 0.0;
     double pressureRampTimeSec = 0.10;
     bool pressureRampTimeSecExplicit = false;
+    // Optional subglottal driving-pressure schedule. Legacy runs remain unchanged.
+    std::string pressureProfile = "legacy_cosine";
+    double pressureInitialPa = 0.0;
+    double pressureTargetPa = 0.0;
+    double pressureFinalPa = 0.0;
+    double pressureStartSec = 0.0;
+    double pressureRiseTimeSec = 0.0;
+    double pressureHoldTimeSec = 0.0;
+    double pressureFallTimeSec = 0.0;
+    bool pressureInitialPaExplicit = false;
+    bool pressureTargetPaExplicit = false;
+    bool pressureFinalPaExplicit = false;
+    bool pressureRiseTimeSecExplicit = false;
+    bool pressureHoldTimeSecExplicit = false;
+    bool pressureFallTimeSecExplicit = false;
     // AP-end/contact diagnostics.  AP rows are surface-grid j indices; a
     // positive distance selects rows whose reference z lies within that many
     // millimetres of either end.  Row and distance selectors are exclusive.
@@ -106,6 +121,8 @@ struct SimulationParams {
     // filename を読み込み、エラー文字列は err に格納して false を返す
     bool loadFromFile(const fs::path& filename, std::string& err);
     void setUpstreamAcousticProfile(const std::string& profile);
+    // Boundary driving pressure, not the oscillating pressure near the glottis.
+    double pressureCommandAt(double time) const;
 
     // パラメータの整合性チェック。問題があれば err に入れて false を返す
     bool validate(std::string& err) const;

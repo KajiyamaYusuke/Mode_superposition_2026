@@ -149,6 +149,18 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "\nsubglottal_sections = " << params.N_sub
              << "\nvocal_tract_radius_m = " << params.r_vt << "\nvocal_tract_length_m = " << params.L_vt
              << "\nvocal_tract_sections = " << params.N_vt << "\n";
+    if (params.pressureProfile != "legacy_cosine") {
+        manifest << "pressure_profile = " << params.pressureProfile << "\n"
+                 << "pressure_initial_pa = " << params.pressureInitialPa << "\n"
+                 << "pressure_target_pa = " << params.pressureTargetPa << "\n"
+                 << "pressure_final_pa = " << params.pressureFinalPa << "\n"
+                 << "pressure_start_sec = " << params.pressureStartSec << "\n"
+                 << "pressure_rise_time_sec = " << params.pressureRiseTimeSec << "\n"
+                 << "pressure_hold_time_sec = " << params.pressureHoldTimeSec << "\n"
+                 << "pressure_fall_time_sec = " << params.pressureFallTimeSec << "\n"
+                 << "pressure_empirical_coefficients = updated_per_step_from_commanded_pressure\n"
+                 << "acoustic_coefficients_csv = initial_snapshot_only\n";
+    }
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
     geomL.loadFromVTK(leftModeFile.string());
@@ -325,6 +337,14 @@ void Simulation::run() {
     std::ofstream fdispXY(datDir / "displace_xy.dat");
     std::ofstream methodTrace;
     std::ofstream acousticTrace;
+    std::ofstream pressureSchedule;
+    if (params.pressureProfile != "legacy_cosine") {
+        pressureSchedule.open(runDir / "csv" / "pressure_schedule.csv");
+        if (!pressureSchedule)
+            throw std::runtime_error("Cannot open pressure_schedule.csv");
+        pressureSchedule << "step,time_s,pressure_command_pa,alpha1,alpha2,beta,R2,Rr\n"
+                         << std::setprecision(17);
+    }
     const char* acousticTraceFlag = std::getenv("SIMULATION_ACOUSTIC_TRACE");
     if (acousticTraceFlag && std::string(acousticTraceFlag)=="1") {
         acousticTrace.open(runDir / "csv" / "acoustic_trace.csv");
@@ -420,6 +440,14 @@ void Simulation::run() {
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
         kanaya.afterFluid();
 #endif
+        if (pressureSchedule.is_open()
+            && (n % params.nwrite == 0 || n == params.nstep - 1)) {
+            const auto& flow = fCalc.diagnosticFlow();
+            const auto coeff = flow.pressureDependentCoefficients();
+            pressureSchedule << n << ',' << t << ',' << flow.lungPressure();
+            for (double value : coeff) pressureSchedule << ',' << value;
+            pressureSchedule << '\n';
+        }
         if (params.glottalMethods.any())
             methodTrace << n << ',' << t << ',' << fCalc.minimumSectionIndex() << ','
                 << fCalc.flowTerminalIndex() << ',' << fCalc.pressureRecoveryIndex() << ','

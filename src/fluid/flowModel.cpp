@@ -64,10 +64,37 @@ void FlowModel::initialize(const SimulationParams& params, const Geometry& geome
         Lr_ = rho_*1.1*std::sqrt(Avt/M_PI)/Avt;
         Rr_ = alpha2_*rho_*params.c_sound/(9.0*M_PI*M_PI*Avt);
     } else { La_ = 1e-1; Ca_ = 1e30; Lr_ = Rr_ = 0.0; }
+    if (params.pressureProfile != "legacy_cosine") {
+        lungPressure_ = params.pressureCommandAt(0.0);
+        setPressureDependentCoefficients(lungPressure_);
+    }
+}
+
+void FlowModel::setPressureDependentCoefficients(double commandedPressure) {
+    // Apply steady-flow empirical fits quasi-steadily to the commanded
+    // driving pressure; never to the fluctuating subglottal pressure Pg.
+    alpha1_ = -2.5e-5 * commandedPressure + 0.185;
+    alpha2_ =  1.6e-3 * commandedPressure + 0.6;
+    beta_   =  1.125e-4 * commandedPressure + 0.1375;
+    const double Asub = M_PI * sp_->r_sub * sp_->r_sub;
+    R2_ = alpha1_ / (Asub * Asub) * std::sqrt(rho_ * mu_ * sp_->c_sound);
+    if (hasVocalTract_) {
+        const double Avt = M_PI * sp_->r_vt * sp_->r_vt;
+        Rr_ = alpha2_ * rho_ * sp_->c_sound / (9.0 * M_PI * M_PI * Avt);
+    } else {
+        Rr_ = 0.0;
+    }
 }
 
 void FlowModel::advance(double time, double dt, double minimumArea, double previousFlow,
                         const ChannelSections& sections) {
+    // Must precede all modern and legacy coefficient branches, including
+    // LegacyGlottal::coefficients(), which uses beta_ before calcFlowStep().
+    if (sp_->pressureProfile != "legacy_cosine") {
+        lungPressure_ = sp_->pressureCommandAt(time);
+        rampRatio_ = 1.0;  // Not a global ramp fraction for piecewise schedules.
+        setPressureDependentCoefficients(lungPressure_);
+    }
     const auto selection = sp_->glottalMethods.any()
         ? LegacyGlottal::select(sections,sp_->glottalMethods,sp_->flowSeparationAreaRatio)
         : selectSeparationByAreaRatio(sections.area, sections.valid, sp_->flowSeparationAreaRatio, kAreaClosedMm2);
@@ -142,11 +169,13 @@ void FlowModel::calcFlowStep(double time, double dt, double minimumArea) {
     // The checked-in solver historically used 0.05 s although the model
     // documentation stated 0.10 s.  Preserve omitted-option runs exactly;
     // new diagnostic inputs should set pressureRampTimeSec explicitly.
-    const double rampTime = sp_->pressureRampTimeSecExplicit
-        ? sp_->pressureRampTimeSec : 0.05;
-    rampRatio_ = time < rampTime
-        ? 0.5 * (1.0 - std::cos(M_PI * time / rampTime)) : 1.0;
-    lungPressure_ = sp_->ps * rampRatio_;
+    if (sp_->pressureProfile == "legacy_cosine") {
+        const double rampTime = sp_->pressureRampTimeSecExplicit
+            ? sp_->pressureRampTimeSec : 0.05;
+        rampRatio_ = time < rampTime
+            ? 0.5 * (1.0 - std::cos(M_PI * time / rampTime)) : 1.0;
+        lungPressure_ = sp_->ps * rampRatio_;
+    }
     for (int j=0; j<ng; ++j) Pu_[j] += Uu_[j]-Uu_[j+1];
     Pu_[ng] += Uu_[ng]-previousUg_;
     Pu_[ng+1] += previousUg_-Ud_[0];

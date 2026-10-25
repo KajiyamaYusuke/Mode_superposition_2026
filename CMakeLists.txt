@@ -129,6 +129,12 @@ if(BUILD_TESTING)
     target_include_directories(test_mode_selection PRIVATE ${SIMULATION_INCLUDE_DIRS})
     add_test(NAME mode_selection COMMAND test_mode_selection)
 
+    add_executable(test_pressure_profile
+        tests/test_pressure_profile.cpp
+        src/simulation/readParams.cpp
+    )
+    target_include_directories(test_pressure_profile PRIVATE ${SIMULATION_INCLUDE_DIRS})
+    add_test(NAME pressure_profile COMMAND test_pressure_profile)
     add_executable(test_input_file_params
         tests/test_input_file_params.cpp
         src/simulation/readParams.cpp

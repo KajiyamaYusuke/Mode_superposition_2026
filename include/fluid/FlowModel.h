@@ -20,6 +20,10 @@ public:
     double flowRate() const { return currentUg_; }
     double glottalPressure() const { return currentPg_; }
     double rampRatio() const { return rampRatio_; }
+    // Current pressure-dependent empirical coefficients and airway resistances.
+    std::array<double,5> pressureDependentCoefficients() const {
+        return {alpha1_, alpha2_, beta_, R2_, Rr_};
+    }
     double lungPressure() const { return lungPressure_; }
     const std::vector<double>& upstreamPressure() const { return Pu_; }
     const std::vector<double>& downstreamPressure() const { return Pd_; }
@@ -41,6 +45,7 @@ public:
 private:
     void calcFlowStep(double time, double dt, double minArea);
     void recordAcousticStep(double dt, double minimumArea);
+    void setPressureDependentCoefficients(double commandedPressure);
 
     const SimulationParams* sp_ = nullptr;
     double rho_ = 0.0, mu_ = 0.0;

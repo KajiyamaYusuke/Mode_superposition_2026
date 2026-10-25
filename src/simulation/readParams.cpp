@@ -180,6 +180,32 @@ bool SimulationParams::loadFromFile(const fs::path& filename, std::string& err) 
                     pressureRampTimeSec = parseDoubleStrict(rhs, key);
                     pressureRampTimeSecExplicit = true;
                 }
+                else if (key == "pressureprofile") pressureProfile = toLower(rhs);
+                else if (key == "pressureinitialpa") {
+                    pressureInitialPa = parseDoubleStrict(rhs, key);
+                    pressureInitialPaExplicit = true;
+                }
+                else if (key == "pressuretargetpa") {
+                    pressureTargetPa = parseDoubleStrict(rhs, key);
+                    pressureTargetPaExplicit = true;
+                }
+                else if (key == "pressurefinalpa") {
+                    pressureFinalPa = parseDoubleStrict(rhs, key);
+                    pressureFinalPaExplicit = true;
+                }
+                else if (key == "pressurestartsec") pressureStartSec = parseDoubleStrict(rhs, key);
+                else if (key == "pressurerisetimesec") {
+                    pressureRiseTimeSec = parseDoubleStrict(rhs, key);
+                    pressureRiseTimeSecExplicit = true;
+                }
+                else if (key == "pressureholdtimesec") {
+                    pressureHoldTimeSec = parseDoubleStrict(rhs, key);
+                    pressureHoldTimeSecExplicit = true;
+                }
+                else if (key == "pressurefalltimesec") {
+                    pressureFallTimeSec = parseDoubleStrict(rhs, key);
+                    pressureFallTimeSecExplicit = true;
+                }
                 else if (key == "apcontactdiagnosticenabled") {
                     const int enabled = parseIntStrict(rhs, key);
                     if (enabled != 0 && enabled != 1)
@@ -282,6 +308,64 @@ bool SimulationParams::validate(std::string& err) const {
         err = "pressureRampTimeSec must be finite and > 0";
         return false;
     }
+    if (pressureProfile != "legacy_cosine" && pressureProfile != "linear_sweep"
+        && pressureProfile != "linear_cycle") {
+        err = "unknown pressureProfile"; return false;
+    }
+    const bool hasSweepFields = pressureInitialPaExplicit || pressureTargetPaExplicit
+        || pressureFinalPaExplicit || pressureStartSec != 0.0
+        || pressureRiseTimeSecExplicit || pressureHoldTimeSecExplicit
+        || pressureFallTimeSecExplicit;
+    if (pressureProfile == "legacy_cosine") {
+        if (hasSweepFields) {
+            err = "pressure sweep parameters require linear_sweep or linear_cycle"; return false;
+        }
+    } else {
+        if (iforce != 0) {
+            err = "time-dependent pressure requires iforce=0"; return false;
+        }
+        if (pressureRampTimeSecExplicit) {
+            err = "pressureRampTimeSec is exclusive to legacy_cosine"; return false;
+        }
+        if (!pressureInitialPaExplicit || !pressureTargetPaExplicit
+            || !pressureRiseTimeSecExplicit) {
+            err = "pressureInitialPa, pressureTargetPa and pressureRiseTimeSec are required"; return false;
+        }
+        if (!std::isfinite(pressureInitialPa) || !std::isfinite(pressureTargetPa)
+            || !std::isfinite(pressureFinalPa) || !std::isfinite(pressureStartSec)
+            || !std::isfinite(pressureRiseTimeSec) || !std::isfinite(pressureHoldTimeSec)
+            || !std::isfinite(pressureFallTimeSec)
+            || pressureInitialPa < 0.0 || pressureTargetPa < 0.0
+            || pressureStartSec < 0.0 || pressureRiseTimeSec <= 0.0) {
+            err = "invalid pressure sweep values or durations"; return false;
+        }
+        if (pressureProfile == "linear_sweep") {
+            if (pressureFinalPaExplicit || pressureHoldTimeSecExplicit
+                || pressureFallTimeSecExplicit) {
+                err = "linear_sweep does not accept final/hold/fall options"; return false;
+            }
+        } else {
+            if (!pressureFinalPaExplicit || !pressureFallTimeSecExplicit
+                || pressureFinalPa < 0.0 || pressureHoldTimeSec < 0.0
+                || pressureFallTimeSec <= 0.0
+                || pressureTargetPa < std::max(pressureInitialPa, pressureFinalPa)) {
+                err = "linear_cycle requires valid peak/final/hold/fall values"; return false;
+            }
+        }
+        const double endSec = pressureStartSec + pressureRiseTimeSec
+            + (pressureProfile == "linear_cycle"
+                ? pressureHoldTimeSec + pressureFallTimeSec : 0.0);
+        if (!std::isfinite(endSec)) {
+            err = "pressure sweep schedule has nonfinite end time"; return false;
+        }
+        const double largestPressure = std::max(pressureInitialPa,
+            std::max(pressureTargetPa, pressureFinalPa));
+        // The empirical upstream loss alpha1 must not become negative.
+        if (0.185 - 2.5e-5 * largestPressure < 0.0) {
+            err = "pressure sweep makes alpha1 negative (empirical model limit)";
+            return false;
+        }
+    }
     if (apContactExcludedRowsPerEnd < 0) {
         err = "AP contact row counts must be >= 0";
         return false;
@@ -303,6 +387,37 @@ bool SimulationParams::validate(std::string& err) const {
     }
     // 追加チェック（例: ファイル/ディレクトリ存在確認を入れるならここ）
     return true;
+}
+
+double SimulationParams::pressureCommandAt(double time) const {
+    if (!std::isfinite(time) || time < 0.0)
+        throw std::runtime_error("pressureCommandAt requires nonnegative finite time");
+    if (pressureProfile == "legacy_cosine") {
+        const double rampTime = pressureRampTimeSecExplicit ? pressureRampTimeSec : 0.05;
+        const double ratio = time < rampTime
+            ? 0.5 * (1.0 - std::cos(std::acos(-1.0) * time / rampTime)) : 1.0;
+        return ps * ratio;
+    }
+    const auto interpolate = [time](double from, double to, double start, double duration) {
+        if (time <= start) return from;
+        if (time >= start + duration) return to;
+        const double fraction = (time - start) / duration;
+        return from + (to - from) * fraction;
+    };
+    if (pressureProfile == "linear_sweep")
+        return interpolate(pressureInitialPa, pressureTargetPa,
+                           pressureStartSec, pressureRiseTimeSec);
+    if (pressureProfile == "linear_cycle") {
+        const double peakTime = pressureStartSec + pressureRiseTimeSec;
+        const double fallStart = peakTime + pressureHoldTimeSec;
+        if (time < peakTime)
+            return interpolate(pressureInitialPa, pressureTargetPa,
+                               pressureStartSec, pressureRiseTimeSec);
+        if (time < fallStart) return pressureTargetPa;
+        return interpolate(pressureTargetPa, pressureFinalPa,
+                           fallStart, pressureFallTimeSec);
+    }
+    throw std::runtime_error("unknown pressure profile");
 }
 
 void SimulationParams::print(std::ostream& os) const {
@@ -336,6 +451,16 @@ void SimulationParams::print(std::ostream& os) const {
     os << "  flowBlendLengthMm = " << flowBlendLengthMm << "\n";
     os << "  flowSeparationAreaRatio = " << flowSeparationAreaRatio << "\n";
     os << "  initialGapMm = " << initialGapMm << " [mm]\n";
+    os << "  pressureProfile = " << pressureProfile << "\n";
+    if (pressureProfile != "legacy_cosine") {
+        os << "  pressureInitialPa = " << pressureInitialPa << "\n"
+           << "  pressureTargetPa = " << pressureTargetPa << "\n"
+           << "  pressureFinalPa = " << pressureFinalPa << "\n"
+           << "  pressureStartSec = " << pressureStartSec << "\n"
+           << "  pressureRiseTimeSec = " << pressureRiseTimeSec << "\n"
+           << "  pressureHoldTimeSec = " << pressureHoldTimeSec << "\n"
+           << "  pressureFallTimeSec = " << pressureFallTimeSec << "\n";
+    }
     os << "  pressureRampTimeSec = " << pressureRampTimeSec
        << (pressureRampTimeSecExplicit ? " [s] (explicit)\n" : " [s] (legacy omitted option)\n");
     os << "  apContactDiagnosticEnabled = " << apContactDiagnosticEnabled << "\n";
