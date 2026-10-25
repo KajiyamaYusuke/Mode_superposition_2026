@@ -15,7 +15,7 @@ values_m3 = harea[:, 1]     # 2列目（流量 [m^3/s]）
 values_ml = values_m3 * 1e6 
 
 x = labels * 1e-5
-start_time = 0.2
+start_time = 0.05
 duration   = 0.1
 
 plt.figure(figsize=(8,2), dpi=100)

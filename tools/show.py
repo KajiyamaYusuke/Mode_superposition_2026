@@ -12,7 +12,7 @@ labels = harea[:, 0]        # ← 1列目（横軸のラベル）
 values = harea[:, 1:]  
 
 # 2. 各行の最小値を求める
-row_min = np.min(values, axis=1)  # 各行の最小値を1次元配列で返す
+row_min = np.nanmin(values, axis=1)
 
 x = labels * 1e-5
 # mask = x >= 0.1
