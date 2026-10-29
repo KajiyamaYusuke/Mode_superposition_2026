@@ -42,23 +42,23 @@
 
 比較用の既報対称ケースは **Body 12/12 kPa、Cover 3/3 kPa、900 Pa、同一評価窓、\(A_R/A_L\simeq1.000\)**。元の保存実行があれば鏡映対称・観測点チェックに使う。追加の本番計算は原則しない。
 
-**混同禁止**: 旧比較には右Cover=2 kPaの別系列がある。また、既存の \`input/param.txt\` はリポジトリのサンプル/最新作業条件であり、上記12/6・900 Paを表しているとは限らない。現時点の \`main\` にある \`input/param.txt\` は左右のBody指定が対象条件と異なる。元の実行manifestと左右別モード入力の材料条件を確認せずに使わないこと。特に左右のモードVTU/周波数ファイルの割当を点検する。
+**混同禁止**: 旧比較には右Cover=2 kPaの別系列がある。また、既存の `input/param.txt` はリポジトリのサンプル/最新作業条件であり、上記12/6・900 Paを表しているとは限らない。現時点の `main` にある `input/param.txt` は左右のBody指定が対象条件と異なる。元の実行manifestと左右別モード入力の材料条件を確認せずに使わないこと。特に左右のモードVTU/周波数ファイルの割当を点検する。
 
 ## 2. 開始時の安全対策・リポジトリ調査
 
 これは**解析・観測タスク**であってモデル改造や係数最適化ではない。
 
-1. ローカルの \`pwd\`、\`git status --short\`、\`git branch --show-current\`、\`git rev-parse HEAD\`、\`git remote -v\` を記録し、現在の \`AGENTS.md\` に従う。**GitHub mainとローカルのソース・作業中差分が一致するとは限らない**。最新版へ強制checkout/reset/rebaseしない。
-2. \`input/\`、\`output/\`、\`result/\`、\`build/\`、非追跡ファイル、既存診断データ、未コミット変更を保護。既存実行を上書きしない。独立したworktree/出力先/実行ディレクトリを用い、入力ファイルを読み取り専用の扱いにする。
+1. ローカルの `pwd`、`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git remote -v` を記録し、現在の `AGENTS.md` に従う。**GitHub mainとローカルのソース・作業中差分が一致するとは限らない**。最新版へ強制checkout/reset/rebaseしない。
+2. `input/`、`output/`、`result/`、`build/`、非追跡ファイル、既存診断データ、未コミット変更を保護。既存実行を上書きしない。独立したworktree/出力先/実行ディレクトリを用い、入力ファイルを読み取り専用の扱いにする。
 3. 調査の主な入口（**ファイル名は2026-10-29時点のmainで確認した候補。実作業版で再確認**）:
-   - \`src/simulation/simulation.cpp\`: 時間更新、左右代表点、\`SIMULATION_RUN_DIR\`、出力manifest
-   - \`src/structure/state.cpp\`、\`src/structure/modedata.cpp\`、\`src/structure/rungeStep.cpp\`: 変位再構成、モード正規化、時間積分
-   - \`src/forces/forceCalculatorFluid.cpp\`、\`forceCalculatorContact.cpp\`、\`modalProjector.cpp\`: 壁面流体荷重、最終採用接触力、一般化力
-   - \`include/diagnostics/KanayaDiagnostics.h\`、\`src/diagnostics/KanayaDiagnostics.cpp\`、\`tools/kanaya_diagnostics/analyze.py\`: **既存の流体正負圧・モード仕事・接触・幾何・整合性診断**
-   - \`tools/left_right_ratios.py\`、\`tools/monitor_point.py\`、\`tools/plot_modal_energy_share.py\`: 既存の変位・周期・モード関連解析
-   - \`docs/plans/KANAYA_ONE_RUN_FORCE_ENERGY_DIAGNOSTICS.md\`、\`docs/plans/MINIMAL_MODAL_WORK_EXIT_TEST_SPEC.md\`: 先行する観測/仕事診断の設計
-4. 既存runの \`txt/manifest.txt\`、\`txt/params_used.txt\`、\`dat/displace.dat\`、変形VTU、\`kanaya_diagnostic/\` などを探索し、12/6・900 Paの**元実行を特定**する。見つからない入力条件を推測で「再現した」と書かない。
-5. 発見した実行ごとに、git SHA/dirty、パラメータの実値、左右VTU・周波数ファイル名とSHA256、モード番号、圧力履歴、実時間、観測点ID、出力間隔、完走/停止理由を \`manifest.json\` に記録する。
+   - `src/simulation/simulation.cpp`: 時間更新、左右代表点、`SIMULATION_RUN_DIR`、出力manifest
+   - `src/structure/state.cpp`、`src/structure/modedata.cpp`、`src/structure/rungeStep.cpp`: 変位再構成、モード正規化、時間積分
+   - `src/forces/forceCalculatorFluid.cpp`、`forceCalculatorContact.cpp`、`modalProjector.cpp`: 壁面流体荷重、最終採用接触力、一般化力
+   - `include/diagnostics/KanayaDiagnostics.h`、`src/diagnostics/KanayaDiagnostics.cpp`、`tools/kanaya_diagnostics/analyze.py`: **既存の流体正負圧・モード仕事・接触・幾何・整合性診断**
+   - `tools/left_right_ratios.py`、`tools/monitor_point.py`、`tools/plot_modal_energy_share.py`: 既存の変位・周期・モード関連解析
+   - `docs/plans/KANAYA_ONE_RUN_FORCE_ENERGY_DIAGNOSTICS.md`、`docs/plans/MINIMAL_MODAL_WORK_EXIT_TEST_SPEC.md`: 先行する観測/仕事診断の設計
+4. 既存runの `txt/manifest.txt`、`txt/params_used.txt`、`dat/displace.dat`、変形VTU、`kanaya_diagnostic/` などを探索し、12/6・900 Paの**元実行を特定**する。見つからない入力条件を推測で「再現した」と書かない。
+5. 発見した実行ごとに、git SHA/dirty、パラメータの実値、左右VTU・周波数ファイル名とSHA256、モード番号、圧力履歴、実時間、観測点ID、出力間隔、完走/停止理由を `manifest.json` に記録する。
 
 **既存データで解析可能なら、ソルバ改修・再計算を行わず後処理だけで終了してよい。**
 
@@ -66,9 +66,9 @@
 
 ### 3.1 代表点と符号
 
-- \`simulation.cpp\` の代表点選択を読み、**元の左右対応点のID、初期座標(x,y,z)、AP位置、表面格子(i,j)** を取得する。現在のmainではモニター候補(x,z)=(9.2,8.5) mmへの最近接点探索があるが、過去の0.302が**同一観測点**かは未確認。
-- \`displace.dat\` の \`uyL_mm\`、\`uyR_mm\` を用いるとき、これらが絶対位置でなく初期形状からの変位であることをコードと出力で確かめる。右側の鏡映処理・開口方向の符号も点検。
-- 開口方向は実際の初期gapの正方向から判定する。正しい \`signGap\` を使い、例えば \(\Delta g=s_g(u_{y,R}-u_{y,L})\) と定義。左右の変位振幅は符号を変えても不変だが、**位相・流体仕事・開口力の符号には影響する**。
+- `simulation.cpp` の代表点選択を読み、**元の左右対応点のID、初期座標(x,y,z)、AP位置、表面格子(i,j)** を取得する。現在のmainではモニター候補(x,z)=(9.2,8.5) mmへの最近接点探索があるが、過去の0.302が**同一観測点**かは未確認。
+- `displace.dat` の `uyL_mm`、`uyR_mm` を用いるとき、これらが絶対位置でなく初期形状からの変位であることをコードと出力で確かめる。右側の鏡映処理・開口方向の符号も点検。
+- 開口方向は実際の初期gapの正方向から判定する。正しい `signGap` を使い、例えば \(\Delta g=s_g(u_{y,R}-u_{y,L})\) と定義。左右の変位振幅は符号を変えても不変だが、**位相・流体仕事・開口力の符号には影響する**。
 - 頻度や正負の符号で代表点を意図せず入れ替えていないことを確認。複数の近接点で感度も示す。
 
 ### 3.2 必須指標（左右・時間窓を同時に計算）
@@ -95,19 +95,19 @@ u_{s,m}^{probe}(t)=C_{\rm unit}\,\phi_{s,m,y}(p)\,q_{s,m}(t),\quad
 u_s^{probe}(t)=\sum_m u_{s,m}^{probe}(t).
 \]
 
-現行 \`State::mode2uf\` には \(q\phi\) をmmの幾何座標へ換算する \`1e3\` がある。**実装上の座標・変位単位を確認してから**値を比較する。左/右で座標とモードの鏡映符号が対応しているか検証。
+現行 `State::mode2uf` には \(q\phi\) をmmの幾何座標へ換算する `1e3` がある。**実装上の座標・変位単位を確認してから**値を比較する。左/右で座標とモードの鏡映符号が対応しているか検証。
 
 - 左右**全使用モード（通常20）**の代表点寄与：半ptp、RMS、時間平均、\(\phi_y(p)\)、\(\operatorname{var}(u_m)\)、合成時の共分散を計算。
 - \(\mathrm{var}(\sum_m u_m)=\sum_m \mathrm{var}(u_m)+2\sum_{m<n}\mathrm{cov}(u_m,u_n)\) により、モード間の**観測点での打消し**と、そもそもの寄与の弱さを切り分ける。これはエネルギー移送の証明ではない。
-- 代表点変位の再構成値が保存 \`displace.dat\` と一致するか、最大絶対/相対誤差を提示。元と異なるモード選択やVTUを混ぜない。
+- 代表点変位の再構成値が保存 `displace.dat` と一致するか、最大絶対/相対誤差を提示。元と異なるモード選択やVTUを混ぜない。
 - 左右の主要寄与モードの \(\phi_y\) をAP方向に可視化。観測点が節付近か、別モードの符号・位相により相殺しているかを確認。
 - 第1・4・5モードに限定せず**20モードを集計**し、報告の図は寄与上位5＋必要な比較モードへ絞る。旧Kanaya診断の100モード前提を持ち込まない。
 
 ## 5. 第三段階: 流体仕事・構造減衰・接触
 
-**先に既存KanayaDiagnosticsを利用できるか確認する。** \`ENABLE_KANAYA_DIAGNOSTICS\` はコンパイル時、\`SIMULATION_KANAYA_DIAGNOSTICS=1\` は実行時の有効化候補。現行コードでは \`kanaya_diagnostic/\` に \`modal_native.bin\`、\`run_metadata.json\`、\`modal_energy_summary.csv\`、\`consistency.csv\`、\`force_regions.csv\`、\`contact_regions.csv\`、\`flow_geometry.csv\` 等の出力実装がある。**新しい巨大な全モードCSVの重複出力は作らない。**
+**先に既存KanayaDiagnosticsを利用できるか確認する。** `ENABLE_KANAYA_DIAGNOSTICS` はコンパイル時、`SIMULATION_KANAYA_DIAGNOSTICS=1` は実行時の有効化候補。現行コードでは `kanaya_diagnostic/` に `modal_native.bin`、`run_metadata.json`、`modal_energy_summary.csv`、`consistency.csv`、`force_regions.csv`、`contact_regions.csv`、`flow_geometry.csv` 等の出力実装がある。**新しい巨大な全モードCSVの重複出力は作らない。**
 
-重要な制約: 既存 \`modal_energy_summary.csv\` の集計窓は主に0–0.05、0.05–0.10、0.10 s以降のため、**0.30–0.50 sの数値をそのまま読めない**。 \`modal_native.bin\` とメタ情報を用いた任意窓の再集計を第一候補とする。
+重要な制約: 既存 `modal_energy_summary.csv` の集計窓は主に0–0.05、0.05–0.10、0.10 s以降のため、**0.30–0.50 sの数値をそのまま読めない**。 `modal_native.bin` とメタ情報を用いた任意窓の再集計を第一候補とする。
 
 ### 5.1 離散仕事の定義・検算
 
@@ -133,7 +133,7 @@ c_{s,m}=2\zeta_s\omega_{s,m}
 
 - 左右それぞれ全使用モード: \(q,qdot\)のRMS、\(W^+,W^-,W_\mathrm{fluid,raw},W_\mathrm{dynamic},D_\mathrm{struct}\)、対応する固有周波数、\(\Delta q\)。
 - 主要寄与モード: \(q(t),\dot q(t),Q_\mathrm{fluid}(t),Q_\mathrm{contact}(t)\)、累積流体仕事と減衰、一般化力と速度の位相関係。
-- 流体荷重: \`pressure.dat\` の圧力値ではなく、**実際に各壁面節点へ与えた最終的な流体荷重**を正負圧に分解し、左右・流路x位置・AP端/中央で集計。\(F_x,F_y,F_z\) と開口方向成分の符号を保持。
+- 流体荷重: `pressure.dat` の圧力値ではなく、**実際に各壁面節点へ与えた最終的な流体荷重**を正負圧に分解し、左右・流路x位置・AP端/中央で集計。\(F_x,F_y,F_z\) と開口方向成分の符号を保持。
 - 接触: **最終採用した**接触反復の荷重と接触ペア数、侵入量、AP端/中央、中央部開閉との時間関係。接触ペナルティの仕事を一括して「散逸」と呼ばない。接触力の評価時刻が流体荷重と違う場合は明記。
 - モードエネルギーの独立性は自明ではない。正規化モードのGram行列の非対角項を確認し、SI/J表記の整合が未検証の場合は「離散仕事の代数値」「相対比較」と明記する。
 
@@ -143,7 +143,7 @@ c_{s,m}=2\zeta_s\omega_{s,m}
 2. \(Q_m^++Q_m^-=Q_m^{fluid}\)、および実際の総採用一般化力が流体＋接触の分解と一致。
 3. \(\sum_m Q_{m,n}^{fluid}\Delta q_{m,n}=\sum_i\mathbf f_{i,n}^{fluid}\cdot\Delta\mathbf u_{i,n}\) を**同一荷重・同一節点・同一モード数・SI変位**で検算。mm↔m換算とモード符号に注意。
 4. 仕事の正負分解・区間和が全時間積分と一致。\(D\ge0\)、非有限値なし、二重計数なし。
-5. 既存 \`consistency.csv\` / \`run_metadata.json\` と突き合わせる。検算NGなら物理機構の解釈を止め、数値問題として報告する。閾値は既存診断の相対 \(10^{-8}\)＋絶対床等を参照し、変えるなら正当化する。
+5. 既存 `consistency.csv` / `run_metadata.json` と突き合わせる。検算NGなら物理機構の解釈を止め、数値問題として報告する。閾値は既存診断の相対 \(10^{-8}\)＋絶対床等を参照し、変えるなら正当化する。
 
 ## 6. 第四段階: 接触・幾何・数値安定性の品質ゲート
 
@@ -157,40 +157,40 @@ c_{s,m}=2\zeta_s\omega_{s,m}
 
 ### A. 既存データの棚卸し（最優先）
 
-\`12/6・900 Pa\` のrunを特定し、\`dat/displace.dat\`、元のモード入力、保存VTU、Kanaya診断CSV/バイナリの有無を表にする。まず**第一段階**を解析して0.302を再現する。ここで結果が合わなければ条件・評価コードの修正調査で停止。
+`12/6・900 Pa` のrunを特定し、`dat/displace.dat`、元のモード入力、保存VTU、Kanaya診断CSV/バイナリの有無を表にする。まず**第一段階**を解析して0.302を再現する。ここで結果が合わなければ条件・評価コードの修正調査で停止。
 
 ### B. 必要な範囲の後処理のみ追加
 
-推奨新規スクリプト: \`tools/amplitude_asymmetry/diagnose.py\`（既存の \`tools/left_right_ratios.py\` と \`tools/kanaya_diagnostics/analyze.py\` を再利用）。**CLI入力のrunディレクトリ、評価窓、左右定義、元モード入力を明示**し、ハードコードした作業者固有パスは使用しない。
+推奨新規スクリプト: `tools/amplitude_asymmetry/diagnose.py`（既存の `tools/left_right_ratios.py` と `tools/kanaya_diagnostics/analyze.py` を再利用）。**CLI入力のrunディレクトリ、評価窓、左右定義、元モード入力を明示**し、ハードコードした作業者固有パスは使用しない。
 
-診断バイナリがある場合、\`run_metadata.json\` の \`modal_binary_fields\` と \`modal_binary_order\` を読んで \`modal_native.bin\` を解釈する。現行の実装には各step・左/右・使用モード順に \`Q_pos,Q_neg,Q_fluid,Q_contact_adopted,q_n,qdot_n,delta_q\`（7個のlittle-endian float64）が記録される。**run間で形式が同じかメタデータで検証**してから任意窓の仕事を積分する。最終stepは既存実装の区間除外規約を守る。
+診断バイナリがある場合、`run_metadata.json` の `modal_binary_fields` と `modal_binary_order` を読んで `modal_native.bin` を解釈する。現行の実装には各step・左/右・使用モード順に `Q_pos,Q_neg,Q_fluid,Q_contact_adopted,q_n,qdot_n,delta_q`（7個のlittle-endian float64）が記録される。**run間で形式が同じかメタデータで検証**してから任意窓の仕事を積分する。最終stepは既存実装の区間除外規約を守る。
 
 ソース改修がどうしても必要な場合に限り、コンパイル/実行時に**既定OFF**の読み取り専用observerを最小拡張。既存出力・物理式・接触分岐・Newmark・OpenMP順序を変更せず、追加計測だけで解決する。
 
 ### C. 検証後の本番1条件
 
-- \`cmake -S . -B <isolated-build> -DCMAKE_BUILD_TYPE=Release\` 等でReleaseビルド。既存のIntel \`icpx\` + OpenMP設定に従い、実行は \`build\` 配下を作業ディレクトリにする。
-- **診断OFF / ON（OFF指定時もobserver計算をしない）**で短い同条件スモーク試験。流量、面積、壁面圧力、左右変位、接触反復、VTU座標に意図しない差がないことを検証。既存 \`tools/kanaya_diagnostics/analyze.py\` のスモーク・検算機構を再利用。差を許す場合は最大絶対/相対差と理由を報告し、閾値を勝手に緩めない。
-- 実行の必要が証明され、入力が再現できた場合にのみ、**12/6・900 Pa本番を最大1回**診断ONで実行。元入力を上書きせず、\`SIMULATION_RUN_DIR\` に一意の出力先を指定。既存結果や他条件のoutputを消さない。
+- `cmake -S . -B <isolated-build> -DCMAKE_BUILD_TYPE=Release` 等でReleaseビルド。既存のIntel `icpx` + OpenMP設定に従い、実行は `build` 配下を作業ディレクトリにする。
+- **診断OFF / ON（OFF指定時もobserver計算をしない）**で短い同条件スモーク試験。流量、面積、壁面圧力、左右変位、接触反復、VTU座標に意図しない差がないことを検証。既存 `tools/kanaya_diagnostics/analyze.py` のスモーク・検算機構を再利用。差を許す場合は最大絶対/相対差と理由を報告し、閾値を勝手に緩めない。
+- 実行の必要が証明され、入力が再現できた場合にのみ、**12/6・900 Pa本番を最大1回**診断ONで実行。元入力を上書きせず、`SIMULATION_RUN_DIR` に一意の出力先を指定。既存結果や他条件のoutputを消さない。
 - 解析欠損・スモーク不一致・入力不明であれば本番実行に進まず、その原因と残りの作業をレポートする。
 - **この指示書に従う作業の途中で勝手にcommit/push/reset/cleanupをしない**。完了したコード変更は差分・検証方法を報告する。
 
 ## 8. 最小成果物
 
-実行/解析run専用の \`amplitude_asymmetry/\` にまとめる（git管理の成果物へ混入させない）。
+実行/解析run専用の `amplitude_asymmetry/` にまとめる（git管理の成果物へ混入させない）。
 
 | ファイル | 最低限の内容 |
 |---|---|
-| \`manifest.json\` | 実行識別、入力のハッシュ、全条件、出力・評価窓、観測点ID、使用診断・単位、解析品質 |
-| \`amplitude_by_window.csv\` | side/window/probe、半ptp・RMS・P95–P5・周期別量、R/L比 |
-| \`modal_contribution.csv\` | side/mode/source_mode/frequency/probe/\(\phi_y\)、各寄与、共分散・再構成誤差 |
-| \`modal_work.csv\` | side/mode/window、流体仕事(正負/raw/dynamic)、D、接触参考仕事、時刻・求積法 |
-| \`contact_geometry.csv\` | 時刻・左右・AP領域、gap、接触、Amin、流量、異常フラグ。既存ファイルで代替可 |
-| \`checks.json\` | 強制力・モード力・節点仕事の整合性、OFF/ON一致、データ欠落の判定 |
-| \`report.md\` | 最初に要約3行、仮説ごとの判定と数値根拠、留保、次の**1条件以内**の試験案 |
-| \`figures/\` | 最大4枚: ①左右波形と窓別比 ②表面振幅分布 ③モード寄与/合成 ④流体仕事・減衰・接触 |
+| `manifest.json` | 実行識別、入力のハッシュ、全条件、出力・評価窓、観測点ID、使用診断・単位、解析品質 |
+| `amplitude_by_window.csv` | side/window/probe、半ptp・RMS・P95–P5・周期別量、R/L比 |
+| `modal_contribution.csv` | side/mode/source_mode/frequency/probe/\(\phi_y\)、各寄与、共分散・再構成誤差 |
+| `modal_work.csv` | side/mode/window、流体仕事(正負/raw/dynamic)、D、接触参考仕事、時刻・求積法 |
+| `contact_geometry.csv` | 時刻・左右・AP領域、gap、接触、Amin、流量、異常フラグ。既存ファイルで代替可 |
+| `checks.json` | 強制力・モード力・節点仕事の整合性、OFF/ON一致、データ欠落の判定 |
+| `report.md` | 最初に要約3行、仮説ごとの判定と数値根拠、留保、次の**1条件以内**の試験案 |
+| `figures/` | 最大4枚: ①左右波形と窓別比 ②表面振幅分布 ③モード寄与/合成 ④流体仕事・減衰・接触 |
 
-\`modal_native.bin\` など既存診断の大容量生データは**コピーせず参照**する。既存CSVを不必要に複製しない。グラフ・表は左右・単位・窓・条件・上/下流/接触の意味が分かる凡例にする。
+`modal_native.bin` など既存診断の大容量生データは**コピーせず参照**する。既存CSVを不必要に複製しない。グラフ・表は左右・単位・窓・条件・上/下流/接触の意味が分かる凡例にする。
 
 ## 9. 判定基準と最終報告で回答すべき質問
 
@@ -202,7 +202,7 @@ c_{s,m}=2\zeta_s\omega_{s,m}
 | H3 | 接触時刻/領域や構造減衰が左右差と一貫して対応する | 仕事だけでは原因と結果が区別できない |
 | H4 | モード/節点再構成・力/仕事整合・幾何品質に不一致がある | 物理説明を保留し数値問題を先に修正 |
 
-\`report.md\` は必ず以下に**数値または「未測定」**で回答:
+`report.md` は必ず以下に**数値または「未測定」**で回答:
 
 1. 0.30–0.50 sの\(A_R/A_L=0.302\)は**どのrun・観測点・条件**で再現できたか。0.10 s刻みの別窓とRMS比でも傾向は同じか。
 2. 右声帯全体でも振幅が小さいか。それとも代表点の節・モード相殺による局所的な現象か。
@@ -217,4 +217,4 @@ c_{s,m}=2\zeta_s\omega_{s,m}
 
 ### Codexへの最終指示
 
-**まず現在のローカルコードと元runを確認し、12/6・Cover3/3・900Pa・0.30–0.50sの振幅比を再現してください。** 既存データで解ける診断から進め、必要な場合に限り既存KanayaDiagnosticsの記録を利用/最小拡張してください。計算モデルの係数・流体式・接触式・時間積分法を変更せず、振幅差が生じた機構を「検算された量」で検討し、結果を \`report.md\` に記してください。途中でデータ整合性が崩れた場合は物理機構を断定せず、そこで停止してください。
+**まず現在のローカルコードと元runを確認し、12/6・Cover3/3・900Pa・0.30–0.50sの振幅比を再現してください。** 既存データで解ける診断から進め、必要な場合に限り既存KanayaDiagnosticsの記録を利用/最小拡張してください。計算モデルの係数・流体式・接触式・時間積分法を変更せず、振幅差が生じた機構を「検算された量」で検討し、結果を `report.md` に記してください。途中でデータ整合性が崩れた場合は物理機構を断定せず、そこで停止してください。
