@@ -1,5 +1,5 @@
 
-#define _USE_MATH_DEFINES  
+#define _USE_MATH_DEFINES
 #include "Simulation.h"
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
 #include "KanayaDiagnostics.h"
@@ -19,24 +19,19 @@
 #include <utility>
 #include <cstdlib>
 
+Simulation::Simulation() : fCalc(geomL, geomR, mdataL, mdataR, stateL, stateR, params) {
+}
 
-
-
-Simulation::Simulation()
-    : fCalc(geomL, geomR, mdataL, mdataR, stateL, stateR, params)
-{}
-
-void Simulation::initialize(const fs::path& parameterFile) {
+void Simulation::initialize(const fs::path &parameterFile) {
     std::cout << "[Simulation] Initializing..." << std::endl;
-    std::string err ="error";
+    std::string err = "error";
 
     if (!params.loadFromFile(parameterFile, err)) {
-        throw std::runtime_error("Failed to load parameter file '" + parameterFile.string()
-                                 + "': " + err);
+        throw std::runtime_error("Failed to load parameter file '" + parameterFile.string() +
+                                 "': " + err);
     }
     if (!params.validate(err)) {
-        throw std::runtime_error("Invalid parameter file '" + parameterFile.string()
-                                 + "': " + err);
+        throw std::runtime_error("Invalid parameter file '" + parameterFile.string() + "': " + err);
     }
     std::cout << "[Simulation] Parameter file: " << parameterFile << "\n";
     params.print();
@@ -48,8 +43,9 @@ void Simulation::initialize(const fs::path& parameterFile) {
     // accumulation of heavy simulation output.
     const fs::path absoluteParameterFile = fs::absolute(parameterFile).lexically_normal();
     const fs::path projectRoot = absoluteParameterFile.parent_path().parent_path();
-    const auto resolveInputPath = [&](const fs::path& configuredPath) {
-        if (configuredPath.is_absolute()) return configuredPath.lexically_normal();
+    const auto resolveInputPath = [&](const fs::path &configuredPath) {
+        if (configuredPath.is_absolute())
+            return configuredPath.lexically_normal();
         return (absoluteParameterFile.parent_path() / configuredPath).lexically_normal();
     };
     const fs::path leftModeFile = resolveInputPath(params.leftModeFile);
@@ -58,7 +54,7 @@ void Simulation::initialize(const fs::path& parameterFile) {
     const fs::path rightFrequencyFile = resolveInputPath(params.rightFrequencyFile);
     const fs::path leftSurfaceNasFile = resolveInputPath(params.leftSurfaceNasFile);
     const fs::path rightSurfaceNasFile = resolveInputPath(params.rightSurfaceNasFile);
-    const auto requireInputFile = [](const fs::path& path, const char* label) {
+    const auto requireInputFile = [](const fs::path &path, const char *label) {
         if (!fs::is_regular_file(path)) {
             throw std::runtime_error(std::string(label) + " does not exist: " + path.string());
         }
@@ -70,14 +66,14 @@ void Simulation::initialize(const fs::path& parameterFile) {
     requireInputFile(leftSurfaceNasFile, "Left surface NAS file");
     requireInputFile(rightSurfaceNasFile, "Right surface NAS file");
     const double targetInitialGapMm = params.initialGapMm;
-    const char* configuredRunDir = std::getenv("SIMULATION_RUN_DIR");
+    const char *configuredRunDir = std::getenv("SIMULATION_RUN_DIR");
     runDir = configuredRunDir && *configuredRunDir
-        ? fs::absolute(configuredRunDir).lexically_normal()
-        : projectRoot / "output";
-    vtuResultDir = configuredRunDir && *configuredRunDir
-        ? runDir / "result" : projectRoot / "result";
+                     ? fs::absolute(configuredRunDir).lexically_normal()
+                     : projectRoot / "output";
+    vtuResultDir =
+            configuredRunDir && *configuredRunDir ? runDir / "result" : projectRoot / "result";
     fs::create_directories(runDir);
-    for (const char* subdir : {"csv", "dat", "json", "png", "txt", "wav"}) {
+    for (const char *subdir : {"csv", "dat", "json", "png", "txt", "wav"}) {
         fs::create_directories(runDir / subdir);
     }
     fs::copy_file(absoluteParameterFile, runDir / "txt" / "params_used.txt",
@@ -92,7 +88,8 @@ void Simulation::initialize(const fs::path& parameterFile) {
         manifest << "all (1..nmode)";
     } else {
         for (std::size_t i = 0; i < params.modeSelection.size(); ++i) {
-            if (i) manifest << ",";
+            if (i)
+                manifest << ",";
             manifest << params.modeSelection[i];
         }
     }
@@ -114,8 +111,9 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "target_initial_minimum_gap_mm = " << targetInitialGapMm << "\n"
              << "initial_gap_note = "
              << (targetInitialGapMm < 0.0
-                    ? "diagnostic geometric precompression; not a physical adduction force"
-                    : "geometric minimum-gap target") << "\n"
+                         ? "diagnostic geometric precompression; not a physical adduction force"
+                         : "geometric minimum-gap target")
+             << "\n"
              << "pressure_ramp_time_sec = "
              << (params.pressureRampTimeSecExplicit ? params.pressureRampTimeSec : 0.05) << "\n"
              << "pressure_ramp_option_explicit = " << params.pressureRampTimeSecExplicit << "\n"
@@ -131,7 +129,7 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "right_surface_nas = " << rightSurfaceNasFile.string() << "\n"
              << "flow_sections = 50\n"
              << "area_close_m2 = 1e-8\n";
-    const auto& gm=params.glottalMethods;
+    const auto &gm = params.glottalMethods;
     manifest << "glottal_method_profile = " << gm.profile << "\n"
              << "legacy_area = " << gm.area << "\n"
              << "legacy_flow_coefficients = " << gm.flowCoefficients << "\n"
@@ -140,14 +138,17 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "legacy_post_separation = " << gm.postSeparation << "\n"
              << "legacy_surface_pressure_load = " << gm.surfacePressureLoad << "\n"
              << "legacy_contact = 0\nlegacy_integrator = 0\n"
-             << "legacy_reference = https://github.com/KajiyamaYusuke/Mode_superposition/tree/main ; archived source SHA256 in case manifest\n"
+             << "legacy_reference = https://github.com/KajiyamaYusuke/Mode_superposition/tree/main "
+                "; archived source SHA256 in case manifest\n"
              << "write_deformation_vtu = " << params.writeDeformationVtu << "\n";
     manifest << "rho_kg_m3 = " << params.rho << "\nmu_Pa_s = " << params.mu
              << "\nmass_kg = " << params.mass << "\nc_sound_m_s = " << params.c_sound
              << "\ninlet_radius_m = " << params.r_inlet << "\ninlet_length_m = " << params.L_inlet
-             << "\nsubglottal_radius_m = " << params.r_sub << "\nsubglottal_length_m = " << params.L_sub
+             << "\nsubglottal_radius_m = " << params.r_sub
+             << "\nsubglottal_length_m = " << params.L_sub
              << "\nsubglottal_sections = " << params.N_sub
-             << "\nvocal_tract_radius_m = " << params.r_vt << "\nvocal_tract_length_m = " << params.L_vt
+             << "\nvocal_tract_radius_m = " << params.r_vt
+             << "\nvocal_tract_length_m = " << params.L_vt
              << "\nvocal_tract_sections = " << params.N_vt << "\n";
     if (params.pressureProfile != "legacy_cosine") {
         manifest << "pressure_profile = " << params.pressureProfile << "\n"
@@ -164,49 +165,49 @@ void Simulation::initialize(const fs::path& parameterFile) {
     std::cout << "[Simulation] Latest-result directory: " << runDir << "\n";
 
     geomL.loadFromVTK(leftModeFile.string());
-    geomL.surfExtractFromNAS(leftSurfaceNasFile.string(),64,69);
+    geomL.surfExtractFromNAS(leftSurfaceNasFile.string(), 64, 69);
     geomL.surfArea();
     geomL.print();
-    geomL.jtypes[5] = 3;   // 三角形
-    geomL.jtypes[9] = 4;   // 四角形
+    geomL.jtypes[5] = 3; // 三角形
+    geomL.jtypes[9] = 4; // 四角形
     geomL.jtypes[10] = 4;
-    geomL.jtypes[13] = 6;  // 六面体
+    geomL.jtypes[13] = 6; // 六面体
 
     mdataL.initialize(params.nmode, geomL, params.modeSelection);
 
     mdataL.loadFromVTU(leftModeFile.string(), geomL);
     mdataL.loadFreqDamping(leftFrequencyFile.string());
 
-    mdataL.normalizeModes( params.mass, geomL);
+    mdataL.normalizeModes(params.mass, geomL);
 
     geomR.loadFromVTK(rightModeFile.string());
-    geomR.surfExtractFromNAS(rightSurfaceNasFile.string(),64,69);
+    geomR.surfExtractFromNAS(rightSurfaceNasFile.string(), 64, 69);
     geomR.surfArea();
 
-    geomR.jtypes[5] = 3;   // 三角形
-    geomR.jtypes[9] = 4;   // 四角形
+    geomR.jtypes[5] = 3; // 三角形
+    geomR.jtypes[9] = 4; // 四角形
     geomR.jtypes[10] = 4;
-    geomR.jtypes[13] = 6;  // 六面体
+    geomR.jtypes[13] = 6; // 六面体
 
     mdataR.initialize(params.nmode, geomR, params.modeSelection);
 
     mdataR.loadFromVTU(rightModeFile.string(), geomR);
     mdataR.loadFreqDamping(rightFrequencyFile.string());
 
-    mdataR.normalizeModes( params.mass, geomR);
+    mdataR.normalizeModes(params.mass, geomR);
 
-    double ymid = geomR.ymid[0]; 
+    double ymid = geomR.ymid[0];
 
-    // ① ジオメトリのYを反転
-    #pragma omp parallel for schedule(static)
+// ① ジオメトリのYを反転
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < geomR.nPoints; ++i) {
         geomR.points[i].y = 2.0 * ymid - geomR.points[i].y;
     }
 
-    #pragma omp parallel for collapse(2) schedule(static)
+#pragma omp parallel for collapse(2) schedule(static)
     for (int m = 0; m < mdataR.nModes; ++m) {
         for (int i = 0; i < geomR.nPoints; ++i) {
-            mdataR.modes[m][i].uy = -mdataR.modes[m][i].uy; 
+            mdataR.modes[m][i].uy = -mdataR.modes[m][i].uy;
         }
     }
 
@@ -220,7 +221,8 @@ void Simulation::initialize(const fs::path& parameterFile) {
         for (int j = 0; j < commonJ; ++j) {
             const int leftId = geomL.surfp[i][j];
             const int rightId = geomR.surfp[i][j];
-            if (leftId < 0 || rightId < 0) continue;
+            if (leftId < 0 || rightId < 0)
+                continue;
             meanGap += geomR.points[rightId].y - geomL.points[leftId].y;
             ++gapCount;
         }
@@ -234,21 +236,21 @@ void Simulation::initialize(const fs::path& parameterFile) {
         for (int j = 0; j < commonJ; ++j) {
             const int leftId = geomL.surfp[i][j];
             const int rightId = geomR.surfp[i][j];
-            if (leftId < 0 || rightId < 0) continue;
-            minimumGapMm = std::min(
-                minimumGapMm,
-                gapSign * (geomR.points[rightId].y - geomL.points[leftId].y));
+            if (leftId < 0 || rightId < 0)
+                continue;
+            minimumGapMm = std::min(minimumGapMm,
+                                    gapSign * (geomR.points[rightId].y - geomL.points[leftId].y));
         }
     }
     const double gapCorrectionMm = targetInitialGapMm - minimumGapMm;
-    for (auto& point : geomL.points) {
+    for (auto &point : geomL.points) {
         point.y -= 0.5 * gapSign * gapCorrectionMm;
     }
-    for (auto& point : geomR.points) {
+    for (auto &point : geomR.points) {
         point.y += 0.5 * gapSign * gapCorrectionMm;
     }
-    std::cout << "[Simulation] Initial minimum gap: " << minimumGapMm
-              << " mm -> " << targetInitialGapMm << " mm\n";
+    std::cout << "[Simulation] Initial minimum gap: " << minimumGapMm << " mm -> "
+              << targetInitialGapMm << " mm\n";
 
     stateL.initialize(geomL.nPoints, mdataL.nModes, params.nstep, geomL);
     stateR.initialize(geomR.nPoints, mdataR.nModes, params.nstep, geomR);
@@ -266,15 +268,20 @@ void Simulation::initialize(const fs::path& parameterFile) {
              << "upstream_acoustic_profile = " << params.upstreamAcousticProfile << "\n"
              << "upstream_source_commit = 58cd92281aa6a36c732baa680d7817acbc98ddb2\n"
              << "subglottal_Lu_definition = "
-             << (params.upstreamAcousticProfile=="legacy_main"?"rho*dx/A":"rho*dx/(2*A)") << "\n";
+             << (params.upstreamAcousticProfile == "legacy_main" ? "rho*dx/A" : "rho*dx/(2*A)")
+             << "\n";
     std::ofstream acousticCoefficients(runDir / "csv" / "acoustic_coefficients.csv");
     acousticCoefficients << "coefficient,value,unit\n" << std::setprecision(17);
-    const std::array<const char*,9> coefficientNames{"Lui","Cui","Lu","Cu","R2","La","Ca","Lr","Rr"};
-    const std::array<const char*,9> coefficientUnits{"Pa_s2_m-3","m3_Pa-1","Pa_s2_m-3","m3_Pa-1","Pa_s_m-3","Pa_s2_m-3","m3_Pa-1","Pa_s2_m-3","Pa_s_m-3"};
+    const std::array<const char *, 9> coefficientNames{"Lui", "Cui", "Lu", "Cu", "R2",
+                                                       "La",  "Ca",  "Lr", "Rr"};
+    const std::array<const char *, 9> coefficientUnits{"Pa_s2_m-3", "m3_Pa-1",   "Pa_s2_m-3",
+                                                       "m3_Pa-1",   "Pa_s_m-3",  "Pa_s2_m-3",
+                                                       "m3_Pa-1",   "Pa_s2_m-3", "Pa_s_m-3"};
     const auto values = fCalc.diagnosticFlow().acousticCoefficients();
-    for (std::size_t i=0; i<values.size(); ++i) {
+    for (std::size_t i = 0; i < values.size(); ++i) {
         manifest << "acoustic_" << coefficientNames[i] << " = " << values[i] << "\n";
-        acousticCoefficients << coefficientNames[i] << ',' << values[i] << ',' << coefficientUnits[i] << '\n';
+        acousticCoefficients << coefficientNames[i] << ',' << values[i] << ','
+                             << coefficientUnits[i] << '\n';
     }
 
     std::cout << "[Simulation] Initialization complete." << std::endl;
@@ -305,14 +312,11 @@ void Simulation::run() {
 
     int max_icont_used = 0;
 
-    auto now = []() {
-        return std::chrono::high_resolution_clock::now();
-    };
+    auto now = []() { return std::chrono::high_resolution_clock::now(); };
 
     auto elapsed_ms = [](auto t0, auto t1) {
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     };
-
 
     // nSteps+1 に対応
     stateL.qf.resize(mdataL.nModes, 0.0);
@@ -345,23 +349,29 @@ void Simulation::run() {
         pressureSchedule << "step,time_s,pressure_command_pa,alpha1,alpha2,beta,R2,Rr\n"
                          << std::setprecision(17);
     }
-    const char* acousticTraceFlag = std::getenv("SIMULATION_ACOUSTIC_TRACE");
-    if (acousticTraceFlag && std::string(acousticTraceFlag)=="1") {
+    const char *acousticTraceFlag = std::getenv("SIMULATION_ACOUSTIC_TRACE");
+    if (acousticTraceFlag && std::string(acousticTraceFlag) == "1") {
         acousticTrace.open(runDir / "csv" / "acoustic_trace.csv");
-        acousticTrace << "step,time_s,Ug_m3_s,previous_Ug_m3_s,Pg_Pa,Pd0_after_Pa,Pout_Pa,lung_Pa,NR_active,NR_converged,NR_iterations,NR_residual_Pa,NR_quadratic_Pa,NR_viscous_Pa,NR_inertia_Pa,NR_downstream_Pa,NR_upstream_Pa";
-        for (int j=0; j<=params.N_sub; ++j) acousticTrace << ",Uu_" << j << "_m3_s";
-        for (int j=0; j<=params.N_sub+1; ++j) acousticTrace << ",Pu_accum_" << j;
-        for (int j=0; j<=params.N_sub; ++j) acousticTrace << ",Pu_physical_" << j << "_Pa";
+        acousticTrace << "step,time_s,Ug_m3_s,previous_Ug_m3_s,Pg_Pa,Pd0_after_Pa,Pout_Pa,lung_Pa,"
+                         "NR_active,NR_converged,NR_iterations,NR_residual_Pa,NR_quadratic_Pa,NR_"
+                         "viscous_Pa,NR_inertia_Pa,NR_downstream_Pa,NR_upstream_Pa";
+        for (int j = 0; j <= params.N_sub; ++j)
+            acousticTrace << ",Uu_" << j << "_m3_s";
+        for (int j = 0; j <= params.N_sub + 1; ++j)
+            acousticTrace << ",Pu_accum_" << j;
+        for (int j = 0; j <= params.N_sub; ++j)
+            acousticTrace << ",Pu_physical_" << j << "_Pa";
         acousticTrace << '\n' << std::setprecision(17);
     }
     if (params.glottalMethods.any()) {
         methodTrace.open(runDir / "csv" / "glottal_methods.csv");
-        methodTrace << "step,time_s,area_min_index,flow_terminal_index,wall_break_index,wall_end_index,legacy_load_end_exclusive,x_area_min_mm,x_wall_end_mm\n";
+        methodTrace << "step,time_s,area_min_index,flow_terminal_index,wall_break_index,wall_end_"
+                       "index,legacy_load_end_exclusive,x_area_min_mm,x_wall_end_mm\n";
         methodTrace << std::setprecision(17);
     }
     fa << "# step  area[mm^2]\n";
     fu << "# time_s  uyL_mm  uyR_mm\n";
-    fp << "# step  pressure[Pa]\n"; 
+    fp << "# step  pressure[Pa]\n";
     fpv << "# step  outlet_pressure[Pa]\n";
     fuv << "# step  airflow[m^3/s]\n";
     fsectionx << "# step  section_x[mm]\n";
@@ -381,11 +391,11 @@ void Simulation::run() {
     for (int i = 0; i < monitorNi; ++i) {
         for (int j = 0; j < monitorNj; ++j) {
             int idx = geomL.surfp[i][j];
-            if (idx < 0 || geomR.surfp[i][j] < 0) continue;
+            if (idx < 0 || geomR.surfp[i][j] < 0)
+                continue;
             double dx = geomL.points[idx].x - monitorTargetX;
             double dz = geomL.points[idx].z - monitorTargetZ;
-            double dist2 = dx*dx + dz*dz ;
-
+            double dist2 = dx * dx + dz * dz;
 
             if (dist2 < minDist2) {
                 minDist2 = dist2;
@@ -397,16 +407,18 @@ void Simulation::run() {
         }
     }
     std::cout << "Monitor surface point (i,j)=(" << monitorI << ", " << monitorJ << ")\n";
-    std::cout<<"Monitor Node L idx="<<geomL.points[nearestIdxL].x<<", "<<geomL.points[nearestIdxL].y<<", "<<geomL.points[nearestIdxL].z<<"\n";
-    std::cout<<"Monitor Node R idx="<<geomR.points[nearestIdxR].x<<", "<<geomR.points[nearestIdxR].y<<", "<<geomR.points[nearestIdxR].z<<"\n";
+    std::cout << "Monitor Node L idx=" << geomL.points[nearestIdxL].x << ", "
+              << geomL.points[nearestIdxL].y << ", " << geomL.points[nearestIdxL].z << "\n";
+    std::cout << "Monitor Node R idx=" << geomR.points[nearestIdxR].x << ", "
+              << geomR.points[nearestIdxR].y << ", " << geomR.points[nearestIdxR].z << "\n";
 
-    stateL.mode2uf(geomL, mdataL, 0); 
-    stateL.uf2u(); 
-    stateR.mode2uf(geomR, mdataR, 0); 
+    stateL.mode2uf(geomL, mdataL, 0);
+    stateL.uf2u();
+    stateR.mode2uf(geomR, mdataR, 0);
     stateR.uf2u();
 
     std::vector<double> soundSignal;
-        soundSignal.reserve(params.nstep);
+    soundSignal.reserve(params.nstep);
 
     //writeVTKCombined(num, geomL, stateL, geomR, stateR, "../result", 1);
     //num++;
@@ -416,56 +428,65 @@ void Simulation::run() {
         double t = n * params.dt;
 
         // 面積・角度の更新 (左右の相対距離で計算)
-{        auto t0 = now();
-        try {
-            fCalc.updateChannelSections();
-        } catch (const std::exception& error) {
-            // Add time context without changing geometry or solver state.
-            std::cerr << "[ChannelSections] time_s=" << t << " step=" << n
-                      << ": " << error.what() << std::endl;
-            throw;
+        {
+            auto t0 = now();
+            try {
+                fCalc.updateChannelSections();
+            } catch (const std::exception &error) {
+                // Add time context without changing geometry or solver state.
+                std::cerr << "[ChannelSections] time_s=" << t << " step=" << n << ": "
+                          << error.what() << std::endl;
+                throw;
+            }
+            auto t1 = now();
+            time_calcArea += elapsed_ms(t0, t1);
         }
-        auto t1 = now();
-        time_calcArea += elapsed_ms(t0, t1);}
-
 
         // 圧力の計算と、左右への力の分配
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
         kanaya.beginStep(n, t);
 #endif
-{        auto t0 = now();
-        fCalc.applyFluidLoads(t, n);
-        auto t1 = now();
-        time_calcForce += elapsed_ms(t0, t1);}
+        {
+            auto t0 = now();
+            fCalc.applyFluidLoads(t, n);
+            auto t1 = now();
+            time_calcForce += elapsed_ms(t0, t1);
+        }
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
         kanaya.afterFluid();
 #endif
-        if (pressureSchedule.is_open()
-            && (n % params.nwrite == 0 || n == params.nstep - 1)) {
-            const auto& flow = fCalc.diagnosticFlow();
+        if (pressureSchedule.is_open() && (n % params.nwrite == 0 || n == params.nstep - 1)) {
+            const auto &flow = fCalc.diagnosticFlow();
             const auto coeff = flow.pressureDependentCoefficients();
             pressureSchedule << n << ',' << t << ',' << flow.lungPressure();
-            for (double value : coeff) pressureSchedule << ',' << value;
+            for (double value : coeff)
+                pressureSchedule << ',' << value;
             pressureSchedule << '\n';
         }
         if (params.glottalMethods.any())
             methodTrace << n << ',' << t << ',' << fCalc.minimumSectionIndex() << ','
-                << fCalc.flowTerminalIndex() << ',' << fCalc.pressureRecoveryIndex() << ','
-                << fCalc.separationIndex() << ',' << fCalc.legacyLoadEndExclusive() << ','
-                << fCalc.sectionX(fCalc.minimumSectionIndex()) << ',' << fCalc.separationX() << '\n';
+                        << fCalc.flowTerminalIndex() << ',' << fCalc.pressureRecoveryIndex() << ','
+                        << fCalc.separationIndex() << ',' << fCalc.legacyLoadEndExclusive() << ','
+                        << fCalc.sectionX(fCalc.minimumSectionIndex()) << ',' << fCalc.separationX()
+                        << '\n';
         if (acousticTrace.is_open()) {
-            const auto& flow = fCalc.diagnosticFlow();
-            const auto& nr = flow.newtonTrace();
+            const auto &flow = fCalc.diagnosticFlow();
+            const auto &nr = flow.newtonTrace();
             const auto c = flow.acousticCoefficients();
-            acousticTrace << n << ',' << t << ',' << flow.flowRate() << ',' << nr.previousFlow << ','
-                << flow.glottalPressure() << ',' << flow.downstreamPressure().front() << ','
-                << flow.outletPressure() << ',' << flow.lungPressure() << ','
-                << nr.active << ',' << nr.converged << ',' << nr.iterations << ',' << nr.residual;
-            for (double value : nr.terms) acousticTrace << ',' << value;
-            for (double value : flow.upstreamFlow()) acousticTrace << ',' << value;
-            for (double value : flow.upstreamPressure()) acousticTrace << ',' << value;
-            for (int j=0; j<=params.N_sub; ++j)
-                acousticTrace << ',' << params.dt/(j==0?c[1]:c[3])*flow.upstreamPressure()[j];
+            acousticTrace << n << ',' << t << ',' << flow.flowRate() << ',' << nr.previousFlow
+                          << ',' << flow.glottalPressure() << ','
+                          << flow.downstreamPressure().front() << ',' << flow.outletPressure()
+                          << ',' << flow.lungPressure() << ',' << nr.active << ',' << nr.converged
+                          << ',' << nr.iterations << ',' << nr.residual;
+            for (double value : nr.terms)
+                acousticTrace << ',' << value;
+            for (double value : flow.upstreamFlow())
+                acousticTrace << ',' << value;
+            for (double value : flow.upstreamPressure())
+                acousticTrace << ',' << value;
+            for (int j = 0; j <= params.N_sub; ++j)
+                acousticTrace << ','
+                              << params.dt / (j == 0 ? c[1] : c[3]) * flow.upstreamPressure()[j];
             acousticTrace << '\n';
         }
 
@@ -484,32 +505,26 @@ void Simulation::run() {
             fp << "\n";
             fsectionx << "\n";
             fgapcubed << "\n";
-            fseparation << n << " " << fCalc.separationIndex() << " "
-                        << fCalc.separationX() << " "
-                        << fCalc.separationBlendEndX() << " "
-                        << fCalc.separationPressure() << " "
-                        << fCalc.separationMinArea() << " "
-                        << fCalc.separationTargetArea() << " "
+            fseparation << n << " " << fCalc.separationIndex() << " " << fCalc.separationX() << " "
+                        << fCalc.separationBlendEndX() << " " << fCalc.separationPressure() << " "
+                        << fCalc.separationMinArea() << " " << fCalc.separationTargetArea() << " "
                         << fCalc.separationArea() << " "
                         << static_cast<int>(fCalc.separationUsedFallback()) << "\n";
-            fu << t << " "
-               << stateL.disp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " "
+            fu << t << " " << stateL.disp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " "
                << stateR.disp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n";
-            fdispXY << t << " "
-                    << stateL.disp[nearestIdxL].ux - geomL.points[nearestIdxL].x << " "
+            fdispXY << t << " " << stateL.disp[nearestIdxL].ux - geomL.points[nearestIdxL].x << " "
                     << stateL.disp[nearestIdxL].uy - geomL.points[nearestIdxL].y << " "
                     << stateR.disp[nearestIdxR].ux - geomR.points[nearestIdxR].x << " "
                     << stateR.disp[nearestIdxR].uy - geomR.points[nearestIdxR].y << "\n";
             fpv << n << " " << fCalc.outletPressure() << "\n";
             fuv << n << " " << fCalc.currentUg << "\n";
         }
-        
+
         int icont_used_this_step = 0;
         bool broke_by_convergence = false;
         bool broke_by_no_contact = false;
 
         fCalc.resetPreviousContactForce();
-
 
         // --- 接触反復計算 ---
         for (int icont = 1; icont <= params.ncont; ++icont) {
@@ -518,89 +533,95 @@ void Simulation::run() {
             total_contact_iterations++;
 
             // 1. モード力への変換 (L / R)
-{            auto t0 = now();
-            fCalc.projectLoadsToModes();
-            auto t1 = now();
-            time_f2mode += elapsed_ms(t0, t1);}
+            {
+                auto t0 = now();
+                fCalc.projectLoadsToModes();
+                auto t1 = now();
+                time_f2mode += elapsed_ms(t0, t1);
+            }
             total_f2mode_calls++;
 
             // Newmark parameters
-            const double newmark_beta  = 0.275625;
+            const double newmark_beta = 0.275625;
             const double newmark_gamma = 0.55;
 
-            // 2. 時間積分 (左声帯 L)
-            #pragma omp parallel for schedule(static)
+// 2. 時間積分 (左声帯 L)
+#pragma omp parallel for schedule(static)
             for (int i = 0; i < mdataL.nModes; ++i) {
-                double f    = fCalc.fiL[i];                      
-                double q    = stateL.q[i];                       
-                double qdot = stateL.qdot[i];                    
-                double qdd  = stateL.qddot[i];                   
+                double f = fCalc.fiL[i];
+                double q = stateL.q[i];
+                double qdot = stateL.qdot[i];
+                double qdd = stateL.qddot[i];
                 double omega = omegaL[i];
 
                 double qf, qfdot, qfddot;
                 integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zetaL,
                                        newmark_beta, newmark_gamma, qf, qfdot, qfddot);
 
-                stateL.qf[i]     = qf;
-                stateL.qfdot[i]  = qfdot;
+                stateL.qf[i] = qf;
+                stateL.qfdot[i] = qfdot;
                 stateL.qfddot[i] = qfddot;
             }
-            
 
-            // 3. 時間積分 (右声帯 R)
-            #pragma omp parallel for schedule(static)
+// 3. 時間積分 (右声帯 R)
+#pragma omp parallel for schedule(static)
             for (int i = 0; i < mdataR.nModes; ++i) {
-                double f    = fCalc.fiR[i];                      
-                double q    = stateR.q[i];                       
-                double qdot = stateR.qdot[i];                    
-                double qdd  = stateR.qddot[i];                   
+                double f = fCalc.fiR[i];
+                double q = stateR.q[i];
+                double qdot = stateR.qdot[i];
+                double qdd = stateR.qddot[i];
                 double omega = omegaR[i];
 
                 double qf, qfdot, qfddot;
                 integrator.newmarkStep(f, q, qdot, qdd, params.dt, omega, params.zetaR,
                                        newmark_beta, newmark_gamma, qf, qfdot, qfddot);
 
-                stateR.qf[i]     = qf;
-                stateR.qfdot[i]  = qfdot;
+                stateR.qf[i] = qf;
+                stateR.qfdot[i] = qfdot;
                 stateR.qfddot[i] = qfddot;
             }
-            
 
             // 4. モード変位 → 節点変位 (L / R)
-{            auto t0 = now();
-            stateL.mode2ufSurface(geomL, mdataL, n+1);
-            stateR.mode2ufSurface(geomR, mdataR, n+1);
-            auto t1 = now();
-            time_mode2uf += elapsed_ms(t0, t1);}
+            {
+                auto t0 = now();
+                stateL.mode2ufSurface(geomL, mdataL, n + 1);
+                stateR.mode2ufSurface(geomR, mdataR, n + 1);
+                auto t1 = now();
+                time_mode2uf += elapsed_ms(t0, t1);
+            }
             total_mode2uf_calls += 2;
 
             // 5. 接触判定とめり込み力計算 (L / R 相対計算)
-	{            auto t0 = now();
-	            fCalc.applyContactLoads(n, icont);
-	            auto t1 = now();
-	            time_calcDis += elapsed_ms(t0, t1);}
-	            total_calcDis_calls++;
+            {
+                auto t0 = now();
+                fCalc.applyContactLoads(n, icont);
+                auto t1 = now();
+                time_calcDis += elapsed_ms(t0, t1);
+            }
+            total_calcDis_calls++;
 
             // 収束判定
-            if (fCalc.contactFlag
-                && fCalc.contact_force_residual < 1.0e-4
-                && fCalc.contact_penetration_residual < 1.0e-7) {
+            if (fCalc.contactFlag && fCalc.contact_force_residual < 1.0e-4 &&
+                fCalc.contact_penetration_residual < 1.0e-7) {
                 broke_by_convergence = true;
-                break; 
+                break;
             }
             if (!fCalc.contactFlag) {
                 broke_by_no_contact = true;
-                break;  }
+                break;
+            }
         }
 
         // applyContactLoads() has just replaced the contact iterate in the
         // surface load.  Solve once more from the committed t_n state so the
         // displacement that is finally committed is produced by that exact
         // final load (also covers contact disappearance and ncont == 0).
-{       auto t0 = now();
-        fCalc.projectLoadsToModes();
-        auto t1 = now();
-        time_f2mode += elapsed_ms(t0, t1); }
+        {
+            auto t0 = now();
+            fCalc.projectLoadsToModes();
+            auto t1 = now();
+            time_f2mode += elapsed_ms(t0, t1);
+        }
         ++total_f2mode_calls;
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
         kanaya.adoptedContact();
@@ -608,31 +629,31 @@ void Simulation::run() {
 
         constexpr double newmark_beta_final = 0.275625;
         constexpr double newmark_gamma_final = 0.55;
-        #pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < mdataL.nModes; ++i) {
             integrator.newmarkStep(fCalc.fiL[i], stateL.q[i], stateL.qdot[i], stateL.qddot[i],
-                                   params.dt, omegaL[i], params.zetaL,
-                                   newmark_beta_final, newmark_gamma_final,
-                                   stateL.qf[i], stateL.qfdot[i], stateL.qfddot[i]);
+                                   params.dt, omegaL[i], params.zetaL, newmark_beta_final,
+                                   newmark_gamma_final, stateL.qf[i], stateL.qfdot[i],
+                                   stateL.qfddot[i]);
         }
-        #pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < mdataR.nModes; ++i) {
             integrator.newmarkStep(fCalc.fiR[i], stateR.q[i], stateR.qdot[i], stateR.qddot[i],
-                                   params.dt, omegaR[i], params.zetaR,
-                                   newmark_beta_final, newmark_gamma_final,
-                                   stateR.qf[i], stateR.qfdot[i], stateR.qfddot[i]);
+                                   params.dt, omegaR[i], params.zetaR, newmark_beta_final,
+                                   newmark_gamma_final, stateR.qf[i], stateR.qfdot[i],
+                                   stateR.qfddot[i]);
         }
-{       auto t0 = now();
-        stateL.mode2uf(geomL, mdataL, n + 1);
-        stateR.mode2uf(geomR, mdataR, n + 1);
-        auto t1 = now();
-        time_mode2uf += elapsed_ms(t0, t1); }
+        {
+            auto t0 = now();
+            stateL.mode2uf(geomL, mdataL, n + 1);
+            stateR.mode2uf(geomR, mdataR, n + 1);
+            auto t1 = now();
+            time_mode2uf += elapsed_ms(t0, t1);
+        }
         total_mode2uf_calls += 2;
 
         fCalc.applyContactLoads(n, icont_used_this_step + 1, true);
 
-
-        
         max_icont_used = std::max(max_icont_used, icont_used_this_step);
 
         if (broke_by_convergence) {
@@ -642,18 +663,19 @@ void Simulation::run() {
         } else {
             steps_reached_ncont++;
         }
-    
+
         // 状態の確定
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
-        kanaya.endStep(icont_used_this_step,
-                       broke_by_convergence ? 1 : broke_by_no_contact ? 2 : 3);
+        kanaya.endStep(icont_used_this_step, broke_by_convergence  ? 1
+                                             : broke_by_no_contact ? 2
+                                                                   : 3);
 #endif
         stateL.uf2u();
         stateR.uf2u();
         auto t0 = now();
 
         // 3Dモデル出力
-        if (params.writeDeformationVtu && n % 20 == 0 && params.nstep-n <= 5000) {
+        if (params.writeDeformationVtu && n % 20 == 0 && params.nstep - n <= 5000) {
             writeVTKCombined(num, geomL, stateL, geomR, stateR, vtuResultDir.string(), 20);
             num++;
         }
@@ -663,27 +685,29 @@ void Simulation::run() {
         soundSignal.push_back(fCalc.outletPressure());
         auto t1 = now();
         time_output += elapsed_ms(t0, t1);
-
     }
     WavWriter::save(soundSignal, params.dt, (runDir / "wav" / "test_sound.wav").string());
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
     kanaya.finish();
 #endif
-    
-    std::cout << "\n=== Timing Summary ===\n";
-    std::cout << "calcArea  : " << time_calcArea  << " ms\n";
-    std::cout << "calcForce : " << time_calcForce << " ms\n";
-    std::cout << "f2mode    : " << time_f2mode    << " ms\n";
-    std::cout << "mode2uf   : " << time_mode2uf   << " ms\n";
-    std::cout << "calcDis   : " << time_calcDis   << " ms\n";
-    std::cout << "output    : " << time_output    << " ms\n";
-    std::cout << "for all   : " << (time_calcArea + time_calcDis + time_calcForce + time_f2mode + time_mode2uf + time_output)/60000 << " min\n"; 
 
-    
+    std::cout << "\n=== Timing Summary ===\n";
+    std::cout << "calcArea  : " << time_calcArea << " ms\n";
+    std::cout << "calcForce : " << time_calcForce << " ms\n";
+    std::cout << "f2mode    : " << time_f2mode << " ms\n";
+    std::cout << "mode2uf   : " << time_mode2uf << " ms\n";
+    std::cout << "calcDis   : " << time_calcDis << " ms\n";
+    std::cout << "output    : " << time_output << " ms\n";
+    std::cout << "for all   : "
+              << (time_calcArea + time_calcDis + time_calcForce + time_f2mode + time_mode2uf +
+                  time_output) /
+                         60000
+              << " min\n";
+
     std::cout << "\n=== Contact Iteration Summary ===\n";
     std::cout << "total contact iterations : " << total_contact_iterations << "\n";
     std::cout << "avg icont per step       : "
-            << static_cast<double>(total_contact_iterations) / params.nstep << "\n";
+              << static_cast<double>(total_contact_iterations) / params.nstep << "\n";
     std::cout << "max icont used           : " << max_icont_used << "\n";
     std::cout << "steps no contact break   : " << steps_no_contact_break << "\n";
     std::cout << "steps converged break    : " << steps_converged_break << "\n";
@@ -692,13 +716,12 @@ void Simulation::run() {
     std::cout << "mode2uf calls            : " << total_mode2uf_calls << "\n";
     std::cout << "calcDis calls            : " << total_calcDis_calls << "\n";
 
-
     std::cout << "[Simulation] Run complete." << std::endl;
-} 
+}
 
-void Simulation::writeVTKCombined(int step, const Geometry& geomL, const State& stateL, 
-                                  const Geometry& geomR, const State& stateR, 
-                                  const std::string& rdir, int nwrite) {
+void Simulation::writeVTKCombined(int step, const Geometry &geomL, const State &stateL,
+                                  const Geometry &geomR, const State &stateR,
+                                  const std::string &rdir, int nwrite) {
     // ファイル名 (例: deform_combined0000.vtu)
     std::ostringstream num;
     num << std::setw(4) << std::setfill('0') << step;
@@ -712,31 +735,33 @@ void Simulation::writeVTKCombined(int step, const Geometry& geomL, const State& 
     }
 
     std::cout << "step: " << step * nwrite << std::endl;
-    std::cout << "output: " << filename << std::endl;   
+    std::cout << "output: " << filename << std::endl;
 
     int totalPoints = geomL.nPoints + geomR.nPoints;
     int totalCells = geomL.nCells + geomR.nCells;
 
-    fout << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\" header_type=\"UInt64\">\n";
+    fout << "<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\" "
+            "header_type=\"UInt64\">\n";
     fout << "  <UnstructuredGrid>\n";
-    fout << "    <Piece NumberOfPoints=\"" << totalPoints 
-         << "\" NumberOfCells=\"" << totalCells << "\">\n";
+    fout << "    <Piece NumberOfPoints=\"" << totalPoints << "\" NumberOfCells=\"" << totalCells
+         << "\">\n";
 
     // ==========================================
     // 1. Points (頂点座標)
     // ==========================================
     fout << "      <Points>\n";
-    fout << "        <DataArray type=\"Float64\" Name=\"Points\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-    
+    fout << "        <DataArray type=\"Float64\" Name=\"Points\" NumberOfComponents=\"3\" "
+            "format=\"ascii\">\n";
+
     // 左声帯の座標
     for (int i = 0; i < geomL.nPoints; i++) {
-        fout << std::scientific << std::setprecision(15)
-             << stateL.disp[i].ux << " " << stateL.disp[i].uy << " " << stateL.disp[i].uz << "\n";
+        fout << std::scientific << std::setprecision(15) << stateL.disp[i].ux << " "
+             << stateL.disp[i].uy << " " << stateL.disp[i].uz << "\n";
     }
     // 右声帯の座標
     for (int i = 0; i < geomR.nPoints; i++) {
-        fout << std::scientific << std::setprecision(15)
-             << stateR.disp[i].ux << " " << stateR.disp[i].uy << " " << stateR.disp[i].uz << "\n";
+        fout << std::scientific << std::setprecision(15) << stateR.disp[i].ux << " "
+             << stateR.disp[i].uy << " " << stateR.disp[i].uz << "\n";
     }
     fout << "        </DataArray>\n";
     fout << "      </Points>\n";
@@ -745,7 +770,7 @@ void Simulation::writeVTKCombined(int step, const Geometry& geomL, const State& 
     // 2. Cells (セル情報)
     // ==========================================
     fout << "      <Cells>\n";
-    
+
     // --- Connectivity (どの頂点が繋がっているか) ---
     fout << "        <DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
     // 左声帯
