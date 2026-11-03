@@ -1,260 +1,340 @@
-# Body剛性比 0.10–0.95 と流量Jitterの関係：M5test/261103固有データの18条件スイープ（Codex実装・解析仕様）
+# Body剛性比0.10–0.95と流量Jitter：261103固有モードによる900/1400 Pa・各1秒の36条件スイープ
 
-> 作成：2026-11-03 / 対象ローカルリポジトリ：`simulation-main`（対応するGitHubリポジトリ：`KajiyamaYusuke/Mode_superposition_2026`）  
-> この文書は**Codexに実装・計算・評価を依頼するための指示**であり、計算を実施済みと表現しない。  
-> **調査の主図：横軸＝右Body/左Bodyのヤング率比、縦軸＝声門流量`Ug`から求めるJitter [%]。**  
-> **最優先：ローカル`input/m5test/261103`（または実際の大小文字表記）にユーザーが追加した`.txt`/`.vtk`を最初に調査し、ファイル形式と対応を確定する。新データは現時点のGitHub mainでは確認できないため、ファイルが実在することや中身を推測しない。**
+> 2026-11-03 更新版 / Codexへの実装・計算・解析指示書  
+> 対象ローカルリポジトリ：`simulation-main`。本書は連携GitHub `KajiyamaYusuke/Mode_superposition_2026` の`main`に保存する。  
+> **確定事項：剛性比18点 × 声門下圧2点（900、1400 Pa）＝36条件。各1.0 s。Jitterの主データは声門流量`Ug`。**  
+> **ユーザー確認済み命名：`b1p2c3.txt`はBody=1.2 kPa、Cover=3 kPa（`p`は小数点）。`b11p4c3`はBody=11.4 kPaと解釈。**  
+> 実行前にローカル`input/m5test/261103`（実在する大文字小文字を優先）の中身を確認する。GitHubの`main`にはこの新入力群が載っていないため、未知の完全なファイル名や実データ形式は捏造しない。  
+> **対象はJitter–剛性比の2系列グラフと、その測定の信頼性評価。追加圧力や時間延長を勝手に行わない。**
 
-## 0. 目的・今回の実験設計の固定事項
+## 0. 研究の目的・主図・解釈の範囲
 
-これまでBody 12/12, 12/6, 12/4, 12/2 kPaの計算（各Ps=900/1400/1900 Pa）で、左右剛性比と振幅・周期性の関係が単調でないこと、特に12/6・900 Paでは柔らかい右が小振幅になったことを確認した。今回の研究目的は**流量波形の周期のゆらぎが、Body層の剛性比によってどう変化するか**を、系統的な条件群で調べること。
-
-- **左Body層**：`E_B,L = 12 kPa`で固定。
-- **右Body層**：`r=E_B,R/E_B,L = 0.10,0.15,...,0.95`の18条件。
-- **右Body[kPa]**：`1.2,1.8,2.4,3.0,3.6,4.2,4.8,5.4,6.0,6.6,7.2,7.8,8.4,9.0,9.6,10.2,10.8,11.4`。浮動小数の加算ループで作らず、整数index`k=2..19`、`r=k/20`、`E=12*k/20`（Decimal/整数で厳密に計画）。
-- **Cover層**：左右とも`3 kPa`固定を**既存の900 Pa参照計算に合わせる仮設定**とする。**新しいモードファイルが別Cover値を示す場合は勝手に使わない**。
-- **左右の形状・密度・モード質量規格化・接触・減衰・流体回路など**：Bodyの右固有データ以外すべて同一。**左Body=12 kPa用の周波数・モードは右条件によらず同一ファイル**。
-- **圧力の初期案**：**Ps=900 Pa、静止初期状態から各条件を独立に開始**。まず18条件の**単一圧力系列**を完成させる。以前の900/1400/1900 Paの圧力別3系列に拡張できる設計にするが、**1400/1900 Paを無条件に追加実行して計54本としない**。追加圧力はユーザー判断の`--pressures`で選択。
-- **数値基準（既存12/6・900Pa参照に合わせる初期案）**：`dt=1.0e−5 s`、`nstep=50000`（0.5 s）、`nmode=20`/側、`zetaL=zetaR=0.06`、`kc1=5, kc2=6000, kc3=5000`、`ncont=100`、初期間隙0 mm、圧力立上げ0.10 s、`iforce=0`。ただし必ず元の**完成済み**`L12_R6_P900`の`params_used.txt/manifest.txt`と照合し、**`input/param.txt`の現在値を無検証で引き継がない**。
-- **Jitter評価主窓**：`[0.30,0.50) s`。立上げ後の`[0.10,0.20)`、`[0.20,0.30)`、`[0.30,0.40)`、`[0.40,0.50)`の窓別結果を補助とする。主窓は直近の振幅比較と同じであり、**本当に定常かどうかは別途検査**。
-- **主観測波形**：**`output/dat/airflow_vt.dat`の`Ug [m³/s]`**。左/右の変位・声門面積では**Jitterの主値を求めない**。変位/面積はピークの誤検出判定と機構との関連を見る補助に限る。
-
-### この依頼における「剛性比」の意味
-
-`r`は**設定したBodyヤング率の右/左比**であって、左右の構造固有周波数比、声帯全体の有効剛性比、左右の自励振動周波数比ではない。この3つを図や本文で取り違えない。x軸の表記例：`Body Young's modulus ratio E_R/E_L`。`r=1`の対称参照を追加する場合は、**新規18条件の外側にある参考点**として区別し、同一条件の既存runに限り採用する。
-
-## 1. 最初に行う安全確認・ローカル実態の確認
-
-Codexは以下を、実装や実行の前に必ず確認・報告：
-
-1. `pwd`、`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、現在の`AGENTS.md`、既存のrunや未コミット変更。**git reset/clean/rebase、強制チェックアウト、元runや入力の上書きを禁止**。未コミットの比較器、接触診断、直近の後処理コードを保護する。
-2. `find input -iname '*261103*'`等で**新データの正確なディレクトリパスと大小文字**を確定（Linux/WSLでは`m5test`と`M5_test`は異なる）。新しい入力を勝手に`input/M5_test`へ移動しない。
-3. 新フォルダの`.txt`、`.vtk`、必要なら`.vtu`をすべて一覧し、**完全なファイル名**、サイズ、SHA256、最初の数行/ヘッダ、個数、同名衝突を記録。**実データ未確認の段階で命名規則・VTK種別を確定したかのように書かない**。
-4. 過去の正しい12/6・900Pa run（候補`analysis_runs/12conditions_20261026_ZivIsl/cases/L12_R6_P900`）から`txt/params_used.txt`、`txt/manifest.txt`、実行環境・左右入力SHA256を取得する。
-5. 元の`leftFrequencyFile`、`leftModeFile`、`leftSurfaceNasFile/rightSurfaceNasFile`が現在も存在するか。**新データは右Body=1.2–11.4 kPa用で、左Body=12 kPaの対応モデルは別の既存ファイルが必要**。見つからなければ右入力だけで実行しない。
-6. 本シミュレーションの入力は、`src/simulation/readParams.cpp`の`leftFrequencyFile/rightFrequencyFile/leftModeFile/rightModeFile/leftSurfaceNasFile/rightSurfaceNasFile`による。生成`param.txt`の置き場所が変わると相対パス解釈も変わるので、**必要な実入力パスは絶対パス化**し、元`input/param.txt`を変更しない。
-7. 計算本体は`src/simulation/simulation.cpp`、VTU読取は`src/structure/modedata.cpp`。`tools/run_right_stiffness_sweep.py`は**整数kPa・古い`M5_test`・`.vtu`前提**でそのまま使用不能の可能性あり。`tools/compare_stiffness_metrics.py`は**左右変位からJitter**を計算しており、今回は主値を流用しない。`tools/jitter.py`は**声門面積を平滑平均との差で評価するコード**であり、**流量の周期Jitterではない**。共通関数のみ検証して再利用する。
-
-### 1.1 対応表をまず完成（実行禁止ゲート）
-
-ファイル名中の`b`直後がBody層のヤング率、というユーザー指定を基本とする。例`...b6c3...`ならBody=6 kPaと解釈できるか確認する。ただし**`.vtk`と`.txt`の名付け方が完全に同じとは決め打ちしない**。`b`の後に小数点、アンダースコア、`p`等が使われる可能性があるので、**実ファイル一覧から明示的なマッピング規則を確定**し、`b1.2`と`b12`などの誤対応を防止する。
-
-**必須`mode_inventory.csv`列：**
-`ratio, body_left_kpa, body_right_kpa, frequency_file, mode_file, actual_extension, detected_format, cover_kpa, point_count, available_modes, first_mode_hz, last_selected_mode_hz, freq_hash, mode_hash, pair_status, notes`。
-
-**18行すべて**に一意の周波数txt＋モードファイルを対応づけ、各`r`について`E_R=12r`を一致確認。欠けた比率・重複・Cover不明・ファイル名に含まれるモデル条件の矛盾は`INPUT_BLOCKED`。推定の最近傍剛性ファイルを代用したり、足りない中間剛性で補間して実行しない。
-
-## 2. **重要：`.vtk`は現行のVTU読取器にそのまま渡せるとは限らない**
-
-現行`ModeData::loadFromVTU`は、**テキストのXML DataArray名**（例えば`Displacement_field,_X-component_@_...`など）を正規表現で読んでいる。**拡張子を`.vtu`へ変えるだけでは、legacy VTKをXML VTUに変換したことにならない**。
-
-前処理ゲート：
-1. 各`.vtk`の**実フォーマット**をヘッダで確認。`# vtk DataFile Version`はlegacy、`<VTKFile type="UnstructuredGrid"...>`はXML系。バイナリ/ASCII、データ配列名、浮動小数精度、PointData数、geometry節点数を検査。
-2. Legacy VTK等で既存`loadFromVTU`が読み込めない場合は、**元ファイルを変更せず**、`staging/converted_modes/`へ対応する**XML ASCII VTU**を作る読み取り変換器を実装（必要なら`vtk`/`meshio`を利用し、環境に存在する依存関係を先に調査）。**バイナリXML VTUのままでは現行の行テキストパーサが読めない可能性**があることに注意。
-3. **単純なファイル名置換・DataArray名の正規化でモードや方向を変えない**。`modedata.cpp`は読み込んだCOMSOL列の`(z,x,y)`への軸順入替を内部で行う。変換時にさらに座標変換しない。PointDataのX/Y/Z成分・周波数・順序・節点IDを**損失なく保持**し、同じ`Geometry`と整合することを検査。
-4. 既存`loadFromVTU`はモードの名前内のHzで並べ替え、`loadFreqDamping`は周波数txtの**行順**を使用する。**両者のモード順が一致することが最重要ゲート**。各モードのHzを比較し、ファイル名の周波数とtxtの差が丸め精度に収まること、20モード以上あること、3方向のPointDataがすべて同じ点数・有限値を持つことを確認。**二重固有値やmode重複を雑に並べ替えない**。
-5. Txtは現行ローダで`周波数Hz, ω, damping`の3列を要求している（`%`始まり行は読み飛ばす）。COMSOL出力が1列、別列や見出し付きなら元を保持して`staging/normalized_freq/`へ変換し、各変換後行を検算する。`omega≈2πf`も確認。**列値や固有周波数を推測補充しない**。
-6. VTKモード数、節点座標・インデックス、固定節点/表面NAS、左右対称の形状対応を点検。モデル剛性だけが異なると期待するが、実際に形状/節点順が変わっているなら**中止**。可視化座標のmm/mとCOMSOL座標は既存正常ケースと比較。
-7. `convert_vtk_modes.py`等は**必要な場合のみ**実装し、出力メタ`conversion_manifest.json`に元/変換後hash・配列名/単位・順序検査・最大数値差を記録。変換済みファイルをGitへコミットしない。
-
-**不可欠な事前動作確認**：代表3条件`r=0.10,0.50,0.95`で、読込可能な20モードの有限値・周波数一致・計算初期化が通るかを確認。ソルバでのフルラン前に周波数とmode形状の誤対応を解消する。
-
-## 3. 固定条件を厳密に揃える
-
-### 3.1 参照条件を`12/6・900Pa`からコピー（単一変更原則）
-
-`run_config.json`（新規）を一度作り、`base_case`と参照`params_used.txt`/`manifest.txt`への完全なパスとhashを記載する。**原則、条件間の変更は右の周波数txtと右モードVTK→VTUファイルだけ**。
-
-固定する項目：`leftBody=12, coverL=coverR=3, Ps=900, rho, mu, mass, nu, nsurfz, surface NAS, modeSelection, nmode, dt, nstep, nwrite, zetaL/R, kc1/2/3, ncont, contactReferenceFrequencyHz, initialGapMm, pressureRampTimeSec, vocal tract/subglottal/inlet acoustic profile, separation, viscous pressure, flow options, glottal method profile, AP contact exclusion, writeDeformationVtu`、プログラムrevisionとCMakeオプション。
-
-**絶対に固定しないもの：**右の固有周波数、右のモード形状（新データに依存）。**ファイル名中のBody剛性だけをパラメータ`E`へ入力する機能ではない**ため、右の固有データの入替が正しく反映されたか記録する。
-
-`input/param.txt`にある`nsurfz=18`等のサンプル値や左b4/右b20の入力は、**今回の基準とは異なる可能性が高い**。新runは旧12/6完成runを基準に、実際のgeometryに合う`nsurfz`とモードファイルを明示する。旧runのヘッダ由来の設定は元ファイルを読むまで**確認前**と区別する。
-
-### 3.2 対称点と既存runの再利用
-
-- **`r=1.00`**は18条件に含まれない。過去`L12_R12_P900`が**同一幾何・Cover・接触・減衰・音響・圧力ランプ・計算方法・Jitter定義・評価窓**であれば、**参考の白抜き点**として再解析し追加可能。**新しい対称計算を自動実行しない**。
-- 過去`r=0.50`（右Body 6）など既存runがあっても、**新しいCOMSOL固有データのSHAが異なれば別データセット**。その場合は旧runを新系列の代用にしない。
-- 完了済み条件をスキップするには、`ratio, Ps, config_hash, input_hashes, executable_hash, complete`の全一致・必要な`airflow_vt.dat`存在・解析QC合格を要求。`status.json`だけで`completed`と判定しない。
-- **既存`analysis_runs/`・`output/`・`result/`を絶対に上書きしない**。新`analysis_runs/jitter_body_ratio_261103_.../`下に独立run。容量・計算時間・並列スレッド上限を確認し、同時複数runで出力ディレクトリ競合を起こさない。
-- 以前の診断の`FAILED_QC`（フル旧新bit不一致）はこのスイープの全18点へ機械的に伝播させないが、今回の採用ビルドが既存12/6基準を近似再現するかの検査は記録する。
-
-## 4. **流量`Ug`からJitterを測定する方法（最重要）**
-
-### 4.1 入力の事実と単位を固定
-
-現行`src/simulation/simulation.cpp`は`dat/airflow_vt.dat`へ`n%5==0`のとき`step Ug`を出力する（**`nwrite`とは独立**）。`dt=1e−5s`なら実サンプル間隔は`5e−5 s`、サンプル周波数20 kHz。**一列目は時間[s]ではなくstep番号**：
-\[
-t_i = \mathrm{step}_i\,dt,\qquad U_i=U_g(t_i)\ [\mathrm{m^3/s}].
-\]
-
-`numpy.loadtxt(..., comments='#')`等で読み、`step`単調増加、stride、有限値、重複なし、期間、終了時刻を検証。**従来の`tools/jitter.py`の声門最小面積を使わず**、必ず`airflow_vt.dat`の2列目からピーク時刻`t_k`を検出する。流量がすべてほぼ0、非発振、サンプルが欠落した場合は適切にステータス付け。
-
-**注意**：ピーク検出の時間量子化だけで擬似的なJitterが出ることがある。100–200 Hz級の周期が100–200サンプル程度なので、**整数サンプルpeakの結果と3点放物線などのサブサンプル補間結果を両方計算**。補間は明瞭な局所ピークで有限・妥当な補間シフトのときのみ使用し、フラットピーク・段差・クリッピングでは無効フラグを付ける。元データの有効分解能を超える精度を主張しない。
-
-### 4.2 主Jitterの定義を明記
-
-検出した**連続する同種の声門流量周期イベント**の時刻を`t_1,\ldots,t_M`とすると`T_i=t_{i+1}-t_i`、`N=M−1`。主指標は
+左Body層のヤング率`E_B,L=12 kPa`を固定し、右Body層`E_B,R`を`1.2–11.4 kPa`に変えたとき、**声門流量の周期変動**がどう変化するかを調査する。比較圧力は**900 Paと1400 Pa**、それぞれ同じ18剛性比を試す。各runは同じ初期状態から独立に計算し、圧力上昇後の流量波形からJitterを評価する。
 
 \[
-\mathrm{Jitter}_{local}[\%]
-=100\frac{\frac{1}{N-1}\sum_{i=1}^{N-1}|T_{i+1}-T_i|}
-{\frac{1}{N}\sum_{i=1}^{N}T_i}.
+r=E_{B,R}/E_{B,L},\qquad r=0.10,0.15,\ldots,0.95,\qquad E_{B,R}=12r\ {\rm kPa}.
 \]
 
-必要な連続周期数（暫定`N≥10`）を満たさなければ数値を出さず`INSUFFICIENT_CYCLES`。主図は**`Ug`由来の`Jitter_local[%]`**に統一する。
+対象18点の対応表：
 
-**補助指標**：
-- `Jitter_sample_grid[%]`：補間前の整数サンプル時刻のみで同じ計算（サンプリング依存性の見積り）。
-- `Jitter_5period[%]`（**参考値であり主指標と混ぜない**）：5周期の局所平均と各`T_i`との差を取り、定義と端点処理を明示する。ユーザーが過去に使った「5周期移動平均」定義に対応するなら、主`Jitter_local`と別系列/別列にする。
-- `CV_T=std(T)/mean(T)`、周期列の自己相関、ピーク数・有効周期数、流量振幅とDC、主な周波数ピーク、前後半の比較。
+| ratio `r` | 右Body [kPa] | filename内Bodyトークン（例） |
+|---:|---:|---|
+| 0.10 | 1.2 | `b1p2c3` |
+| 0.15 | 1.8 | `b1p8c3` |
+| 0.20 | 2.4 | `b2p4c3` |
+| 0.25 | 3.0 | `b3c3` または `b3p0c3`（実在を優先） |
+| 0.30 | 3.6 | `b3p6c3` |
+| 0.35 | 4.2 | `b4p2c3` |
+| 0.40 | 4.8 | `b4p8c3` |
+| 0.45 | 5.4 | `b5p4c3` |
+| 0.50 | 6.0 | `b6c3` または `b6p0c3` |
+| 0.55 | 6.6 | `b6p6c3` |
+| 0.60 | 7.2 | `b7p2c3` |
+| 0.65 | 7.8 | `b7p8c3` |
+| 0.70 | 8.4 | `b8p4c3` |
+| 0.75 | 9.0 | `b9c3` または `b9p0c3` |
+| 0.80 | 9.6 | `b9p6c3` |
+| 0.85 | 10.2 | `b10p2c3` |
+| 0.90 | 10.8 | `b10p8c3` |
+| 0.95 | 11.4 | `b11p4c3` |
 
-**推奨**：SciPy `find_peaks`等の既存依存を使い、ピークprominence（例えば各窓の`P95−P5`に対して`5%,10%,15%`）とmin peak distance（参考帯域80–400Hzに対して過剰ピークを防ぐ値）を**固定ルールで探索**する。**主結果に最も都合のよい閾値を条件ごとに選ばない**。まず対称12/12と右6の既存`Ug`でピークの妥当性を検証し、主設定を固定して全18条件へ適用。
+**注意**：表のトークンは解釈規則を示す例。**`b3c3`/`b3p0c3`のどちらが実在するかはローカルで確認**。ファイル名を近似検索で選ばない。
 
-### 4.3 最大の誤解：高Jitter ≠ 非周期・カオス
+- 主図x軸：`Body Young's modulus ratio E_B,R/E_B,L`。これはBodyヤング率比であり、全声帯の等価剛性比・モード周波数比ではない。
+- 主図y軸：**声門流量`Ug`の`Jitter_local [%]`**。**900 Paと1400 Paを別の色/線として重ねる**。各圧力18点の完成・未完成・無発振・周期抽出不合格を区別。
+- Cover：左右とも3 kPa（`c3`）で統一。左Body12 kPaの対応freq/modeは既存の正常なファイルを特定し、**全36runで完全同一**とする。
+- 自励振動は流体/構造/接触の連成系。**Jitterの変化をただちに右剛性のみの直接因果、乱流、カオス、声質の絶対評価と結びつけない**。
+- 対称比`r=1.00`は今回の18点に含まれない。既存12/12 runが**各圧力・時間・固有データ・数値条件の点で互換**な場合に限って「別データの参考点」として使用。今回新規に対称runを追加しない。
 
-- 流量`Ug`は、1振動周期中に複数の局所ピークを持つ場合がある。**生の極大をすべて周期境界にしない**。目視のピーク印付き`Ug`波形、ピーク間隔・基本周期候補（自己相関とスペクトル）、トラフ/閉鎖相を合わせて**同じ種類のパルスを抽出できたか**を検査する。
-- 1:2や2:2などの**規則的な周期倍化やサブハーモニクス**では、交互の流量ピーク間隔の変動が大きくても、長い反復周期自体は規則的でありうる。その場合、`Jitter_local`を出すなら**パルス列依存の値**と明示し、`PERIOD_MULTIPLIED`等の状態ラベルも付ける。
-- 波形が非定常、発振開始中、周波数ドリフト、ピーク欠落、多峰性、振幅変調、ゼロ流量・未発振、計算停止、幾何不正、異常ピークの場合は、それぞれ`NONSTATIONARY`、`AMBIGUOUS_PEAKS`、`NO_OSCILLATION`、`RUN_FAILED`等の**理由をCSVへ保存**。特に`NO_OSCILLATION`をJitter=0%としない。
-- ピーク検出が有効でない条件を**単なる巨大Jitterとして描画しない**。数値的なJitterだけで「非周期振動／カオス」と判定しない。
-- 0.30–0.40sと0.40–0.50sの平均周期と`Jitter`、振幅包絡、イベント数を比較して**定常性／時間窓依存性**を判定。最終窓で変化が続くなら`WINDOW_DEPENDENT`として主図で区別し、必要ならより長いrunを**別途提案**（今回無断で延長しない）。
-- **感度分析**：prominence設定（3段階）、ピーク補間ON/OFF、平滑化条件（無し／ノイズ対策に必要な場合のみ）、時刻窓を変えて、Jitterの傾向が頑健かを確認。**主設定は前もって固定し、変化が大きい条件にQCフラグ**。測定の推定誤差と計算条件間の変動を混同しない。
+## 1. **確定実行条件（以前の0.5秒／900Paだけという仕様を置換）**
 
-### 4.4 メイン図の見せ方
+| 項目 | 指定 |
+|---|---|
+| Bodyヤング率 | 左12 kPa、右`12r` kPa（18点） |
+| Coverヤング率 | 左右3 kPa（両側のfreq/modeも`c3`） |
+| 声門下圧 | **900 Paと1400 Pa、2系列を両方計算** |
+| 条件数 | **18 × 2 = 36個の1秒フルrun** |
+| 1条件の計算長 | **1.000 s**、`dt=1.0e−5 s`、`nstep=100000` |
+| 圧力ランプ | 既存12/6モデルと揃え、当面`pressureRampTimeSec=0.10`（元の`params_used`で再確認） |
+| モード数 | 各側20（元run設定から照合し、新VTKに20以上含まれること） |
+| 減衰率・接触等 | 元`L12_R6_P900`を基準：`zetaL=zetaR=0.06`、`kc1=5,kc2=6000,kc3=5000`、`ncont=100`、初期間隙0 mm等（**元manifestと照合が先**） |
+| 形状・密度・音響条件 | 元runの左右NAS、質量、空気物性、声道・声門下管、流量モデル等を固定 |
+| 初期条件 | 各比・各圧力で初期状態から独立計算。前ケースの最終状態を引き継がない |
+| **主Jitter窓** | **`[0.50,1.00) s`**（500 ms） |
+| **定常性比較窓** | `[0.50,0.75)`および`[0.75,1.00) s` |
+| 副参考窓 | `[0.30,0.50) s`（以前の研究との比較用、**1秒主結果には混入しない**） |
 
-1. **主図**`jitter_vs_body_ratio.png` / `.svg`：x=`E_B,R/E_B,L`（0.10–0.95、0.05刻みの数値軸）、y=`Ug`由来`Jitter_local[%]`。各条件を点表示、**有効・定常な点だけ薄い線で接続**。値がない・QC不合格な点は`×`や下部小帯に**理由付き**で示し、0%へ押し込まない。対称`r=1.0`の既存基準が検証できたら参照の白抜き点として付けてもよい。
-2. 別図`jitter_qc_and_cycles.png`：ratio vs peak count、周期CV、状態フラグ。Jitterの極大がピーク誤検出や期間不足でないか確認。
-3. 代表波形`flow_examples.png`：最小Jitter・最大Jitter・中間/不良QCの`Ug`（必ず流量[mL/s]への変換`1 m³/s = 10^6 mL/s`を記録）、ピーク位置と周期列。ピークと有効周期を重ね、図だけで算出根拠が追えるようにする。
-4. 感度`jitter_sensitivity.png`：各ratioで閾値・補間・前半/後半の値の散らばり。**周期bootstrapを独立なrun間誤差・信頼区間と呼ばない**。
-5. 将来圧力を増やしたら、**同一ピーク定義**で`Ps`ごとの線/マーカーを追加し、pressureごとに完走数・QCを別記。900 Paしか実行しない段階では架空の圧力系列を描かない。
+**重要な時間窓ルール**：先行の0.5 s runに対する主窓`0.30–0.50s`を、今回の1s run主結果としてそのまま流用してはならない。今回の主結果は`0.50–1.00s`。その間にも包絡や平均周期がドリフトしていれば`NONSTATIONARY`などのQC警告を付ける。1秒計算しただけで定常とは見なさない。
 
-## 5. Codexに作ってほしいプログラム構成
+- `Ps`以外の設定を圧力系列間で変えない。`900`と`1400`の違いは肺圧のみ。
+- 同じ圧力内の18条件間で変えるのは**右Bodyのfreq/modeペアのみ**。
+- `dt,nstep`の変更は**全run共通**（従来との比較では1秒版として明記）。
+- 高負荷の`writeDeformationVtu`やコンパイル診断出力を省略する場合は**全36runで同じ出力設定**にし、物理ソルバの状態が変わらないことを既存テスト／短い検証で確認。既存の`writeDeformationVtu=1`は1sの末尾250VTU/runを作り大容量になり得る。今回のJitterでは**`writeDeformationVtu=0`を省容量の選択肢**とし、採用の有無をrunメタに明記。**物理式・接触・流量は変更しない**。
 
-`tools/body_ratio_jitter_261103/`を新設するか、既存`tools/run_right_stiffness_sweep.py`を壊さない独立スクリプトとして追加：
+## 2. 作業開始時のローカル確認・データ棚卸し
 
-- `inventory_modes.py`：フォルダ列挙、Body値パーサ、freq/modeペア・Cover・ハッシュ・20モード・NAS/節点数/周波数検査、`mode_inventory.csv`。
-- `convert_modes.py`：入力がLegacy VTK/非対応XMLの場合のみlosslessな変換、DataArray名・座標順・点数・周波数順の検証。元ファイルは読み取り専用。
-- `prepare_sweep.py`：参照`params_used.txt`から18条件の専用`param.txt`、`run_config.json`、`cases_manifest.csv`を生成。`--dry-run`をデフォルトにし、18件の変更差分をユーザー/ログへ一覧表示。
-- `run_sweep.py`：`--execute`を明示した時だけ開始。`--ratios`/`--pressures`/`--resume`/`--fail-fast`/`--threads`を持ち、独立runごとのログ/終了コード/manifest/hash、**既存データの上書き拒否**。途中終了からのresumeは条件・入力・実行ファイルが完全一致する場合だけ。**ソルバ物理式を変更しない**。
-- `analyze_flow_jitter.py`：`dat/airflow_vt.dat`から時間へ変換、`Ug`ピーク・周期・`Jitter_local`、QC、窓・感度解析、`flow_peaks.csv`、`flow_cycle_metrics.csv`、各runの`jitter_metrics.json`。
-- `plot_jitter_sweep.py`：全runの`summary.csv`を集約して指定した主図/補助図を作成。未完了runを黙って除外せず凡例・QC表へ残す。
-- `tests/`または既存`tools/tests/`へ、ファイル名パーサ、VTK/VTU配列一致、周波数モード順、param diff、Ug時間軸、Jitter精度、ピーク多重/脱落、QC、resume、シミュレーション実行防止のテストを追加。
+1. `pwd`、`git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`AGENTS.md`、`df -h`、利用可能メモリ、ビルド`icpx`/OpenMP環境を確認。**未コミット差分と既存runは保存**。`git reset/clean/rebase/checkout`や既存出力の上書き禁止。無断commit/push禁止。
+2. `find input -iname '*261103*'`等で**実際のパス・大小文字**を確定。`input/m5test/261103`か`input/M5_test/261103`か等を確認。入力は読み取り専用。
+3. `.txt`と`.vtk`および別形式があれば全列挙し、**実際のファイル名・サイズ・SHA256・先頭ヘッダ・周波数列・モード配列数・節点数**を記録。新しいデータをGitHubから取れると仮定せずローカルを探索。
+4. **命名パーサ**：`b(?P<int>\d+)(?:p(?P<frac>\d+))?c(?P<cover>\d+)` をファイル名の適切なトークン境界で全一致。`b1p2c3` → `Decimal("1.2")`、`b10p8c3` → `10.8`、`b11p4c3` → `11.4`、`b12c3` → `12`。**`p`を圧力、指数、区切りとは解釈しない**。整数小数部`p0`可。ただし`b1p20c3`を`1.20`とする等桁数はDecimalとして解釈し、**同じ値に複数ファイルが対応したら重複検出**。
+5. 新入力のBody18種×Cover3を**それぞれのfreq txt＋mode vtkへ1対1対応**。拡張子を含めると名前の共通prefixは異なるかもしれないので、ファイルの`b...c3`とデータの構造を併用。**同じbトークンを含む別メッシュ/厚さ/δ等のモデルを混ぜない**。
+6. 左Body12の元freq+modeおよび左右`M5_surface...nas`の実在・点順・座標・質量規格化を確認。新データに左12がなければ、既存の12kPaモデルを使ってよいが**Cover、幾何、座標、COMSOLの計算法とメッシュ同一性を確認してから**。未知なら`BLOCKED`で中止。
+7. 既存`analysis_runs/12conditions_20261026_ZivIsl/cases/L12_R6_P900`等から`txt/params_used.txt`、`txt/manifest.txt`、完走状態・ランプ・音響モデル・接触・減衰・ソルバrevisionを回収。**現行`input/param.txt`にある左b4/右b20、nsurfz=18等の値を今回のベースとして勝手に採用しない**。
+8. **最初の成果物`mode_inventory.csv`は18行（固有データの種類）。`cases_manifest.csv`は36行（固有データ×圧力）。** 身元が不確かなファイル、欠損、重複、必要20モード不足があればフル計算開始禁止。
 
-**流用すべき既存部品**：`tools/dynamics_common.py`の時刻/ピーク/period helper、`tools/left_right_ratios.py`のイベント処理、`tools/analyze_irregularity.py`のピーク可視化とスペクトル、`tools/output_layout.py`。ただし主信号は**必ず`Ug`**にし、旧`tools/jitter.py`や`compare_stiffness_metrics.py`の出力列を「Ug jitter」と名前だけ変更しない。
+**mode_inventory.csvの列**：`ratio,body_left_kpa,body_right_kpa,body_token,cover_kpa,frequency_txt,mode_vtk,raw_format,npoints,nmodes,frequency_1_hz,frequency_20_hz,raw_hashes,prepared_hashes,geometry_check,mode_order_check,status,notes`。
 
-### 5.1 CLIイメージ（パスの実体を調べた後、Codexが確定）
+**cases_manifest.csvの列**：`ratio,body_right_kpa,pressure_pa,case_id,param_path,run_dir,left_inputs_hash,right_inputs_hash,mesh_hash,solver_hash,physics_config_hash,nstep,dt_s,analysis_window,status,reason`。
+
+## 3. VTK・周波数の正規化（**ファイル名を直すだけは禁止**）
+
+現行`src/structure/modedata.cpp`の`ModeData::loadFromVTU`は`Displacement_field,_X-component_@_...`等の**XMLテキストDataArray**を解析し、読み込んだXYZモードを内部で`{z,x,y}`へ並べ替える。また`loadFreqDamping`は周波数txtの`Hz omega damping`3列を入力し、TXTは**行順**、VTUは**DataArray名のHz順**を用いる。
+
+1. `.vtk`の先頭が`# vtk DataFile Version`ならlegacy、`<VTKFile...>`ならXML。ASCII/binary/各DataArray名・PointDataかFieldDataか・座標/点数を確認。**`.vtk`を`.vtu`にrenameするだけでは互換にならない**。
+2. 現行のロード形式と互換でない場合のみ、原本を一切改変せずに`staging/converted_modes/`へ`XML ASCII VTU`を生成。`vtk`や`meshio`等の既存環境にあるライブラリを利用する。必要な`PointData`のX/Y/Z成分を**周波数名を含めて損失なく保持**し、ローダが実際に読める形式にする。
+3. **変換器で勝手にXYZの軸を入れ替えない**。軸変換は現行ローダが行うので、二重変換しない。点の並べ替えも禁止。nPoints、各モードのXYZの値、節点順、モード順、欠損/NaN/Infを厳格検証。
+4. 周波数`.txt`が現行3列形式でないときだけ`staging/normalized_freq/`へ変換。`f,omega,damping`に無い物理値を推測して埋めない。原本の`omega`が既知なら`2πf`と差を検査。
+5. **最大の品質ゲート**：VTUの周波数DataArray順とTXTの固有周波数行順が**20モードすべて同じモード**を指していることを確かめる。COMSOLの縮退/近接モードがある場合に黙って対応付けしない。頻度名の丸め精度とmode形状を記録し、危険なケースでは`MODE_ORDER_AMBIGUOUS`として中止。
+6. 節点順・幾何が左12既存モデル／右モデルで一致しない場合は止める。`ModeData::normalizeModes`は質量正規化をソルバで行うため、変換器がさらに規格化しない。
+7. `conversion_manifest.json`にraw/prepared hash、変換前後の最大数値差、PointData/周波数名一覧、対応関係、ソルバでの読込確認を残す。
+
+**代表3ケース（例`r=0.10,0.50,0.95`）の読込・初期化ゲート**を先に通す。`nmode=20`、3方向のモード形状が有効、正常な幾何であることを確認する。**ここで失敗したら36runに進まない**。
+
+## 4. 流量`Ug`由来のJitterの定義と比較方法
+
+### 4.1 流量の正しい時間軸
+
+現行`src/simulation/simulation.cpp`の`dat/airflow_vt.dat`は`n%5==0`の`step Ug`（先頭`# step airflow[m³/s]`）。`dt=1e−5s`なので出力間隔`5e−5s`、流量データは20 kHz相当。**第1列は秒でなくstep**。`t=step*dt`、`Ug`はm³/s。読み込み後に`nstep`、step連続性（5刻み）、時刻範囲、有限性、0に近い流量、ヘッダ、サンプル欠落を検査する。`nwrite`をサンプル間隔と混同しない。
+
+Jitter主信号は**声門流量`Ug`だけ**。声門面積や左/右表面変位で計算した値は、検出の妥当性をみる**独立な補助指標**として区別する。現行`tools/jitter.py`は声門面積の5点移動平均との差であり**今回の流量周期Jitterではない**。`tools/compare_stiffness_metrics.py`は左右変位のJitterなので、`Ug`とラベルを入れ替えて使わない。
+
+### 4.2 流量パルス時刻`t_i`の取得
+
+- パルス検出候補を**至少2通り**持つ。**A）流量`Ug`の局所最大値（`scipy.signal.find_peaks`＋prominence/最小距離）**、**B）同じ流量の下降相の急峻な変化、最小値または包絡に基づく頑健な周期境界**。Bは「閉鎖イベント」と断言せず、選択根拠を図示。2方法で取り出したイベントは同じ物理周期かどうかを波形と自己相関/スペクトルで確認する。
+- Aはパルスが1周期に複数峰を持つ時に過大なピーク数になる。Bも部分閉鎖や連続開口時には存在しないことがある。どちらも**検出不能なら無理に周期を作らない**。
+- 最初に`Ug`の生波形とピーク位置を代表条件で可視化し、peak prominenceの固定基本値（例：各主窓の`P95−P5`の10%）、最小距離、基礎周波数帯域を**事前に固定**。追加の感度検証は`5%,10%,15%`で行い、条件ごとに都合のよい閾値を選んで主結果にしない。
+- 流量が基礎周波数100〜300 Hz程度なら20kHz相当のサンプルで各周期が約67〜200点。整数sample単位の周期差が擬似Jitterを生むため、**サブサンプル補間**（局所3点放物線等）ON/OFFで両方算出。補間が局所形状に適さなければ除外フラグ。
+- `t_i`が厳密に増加し、欠落ピーク・重複・明らかな偽ピークがないか、`Δt`・prominence・包絡・自己相関・FFTから検査。**単一のFFT主ピークは周期列検出の代わりにならない**。
+- 主窓`[0.50,1.00)`の境界では**窓を少し越える波形を読んでから境界内に有効な全周期を切り出す**。窓端をまたぐ中途半端な周期を誤って含めない。周期に使用したピークの数と区間を記録。
+
+### 4.3 周期列と**複数Jitter指標**（すべて`Ug`から）
+
+`M`個の有効な流量パルス時刻から`N=M−1`個の周期`T_i=t_{i+1}-t_i`を得る。**主図は一般的な`Jitter_local`で統一**し、他の指標を補助比較として別図/表へ。
+
+**(1) Jitter local（主指標）：**
+\[
+J_{\rm local}[\%]
+=100\,\frac{\frac{1}{N-1}\sum_{i=1}^{N-1}|T_{i+1}-T_i|}{\bar T}.
+\]
+
+**(2) RAP（3周期平均との差）：**
+\[
+J_{\rm RAP}[\%]
+=100\,\frac{\frac{1}{N-2}\sum_{i=2}^{N-1}\left|T_i-\frac{T_{i-1}+T_i+T_{i+1}}{3}\right|}{\bar T}.
+\]
+
+**(3) PPQ5（5周期平均との差）：**
+\[
+J_{\rm PPQ5}[\%]
+=100\,\frac{\frac{1}{N-4}\sum_{i=3}^{N-2}\left|T_i-\frac{T_{i-2}+T_{i-1}+T_i+T_{i+1}+T_{i+2}}{5}\right|}{\bar T}.
+\]
+
+**(4) CV of periods（参考）：**
+\[
+CV_T[\%]=100\,\frac{\mathrm{std}(T_i)}{\bar T}.
+\]
+
+**(5) 整数sampleのJitter local／補間後のJitter local**を両方記録し、離散サンプリングによる見かけの不規則性を定量化。
+
+**(6) 流量の別パルス検出法BからのJitter local**：同じ期間・周期定義で検出法差を計算し、A/Bの有効周期数・イベント対応と一緒に示す。Bのイベントが不明瞭なら`METHOD_B_NOT_APPLICABLE`であり、検出法Aに強制的に揃えない。
+
+**(7) 任意の独立波形による検算**：声門最小面積・音響圧波形（保存され実際に意味のある信号に限る）から周期を検出し、Ugの代表的周期長や不規則なイベントの時刻と照合してよい。ただし**違う物理量から得たJitterを同じ数値として平均しない**。表には`signal`を必ず含める。
+
+**注意**：RAPとPPQ5は期間ゆらぎの異なる平滑窓による指標であり、互いに独立な物理測定ではない。変動の少ない純周期合成波、交互周期、緩やかな周波数ドリフト、ダブルピーク、失われた周期、振幅変調、強い雑音、無発振の合成テストで正しく区別できること。過去の「5点移動平均」とは**対象が周期列か信号振幅かを厳密に区別**。
+
+### 4.4 周期性と品質判定
+
+**Jitter値の算出可能性**と**不規則な振動状態**は同じではない。高Jitterをすぐに「カオス」や「周期破綻」と呼ばない。以下の状態を全条件に付与：
+
+- `VALID_STATIONARY`：一定の手順でパルスが抽出され、周期数と半窓安定性を満たす。
+- `VALID_WINDOW_DEPENDENT`：周期抽出可能だが前後半でJitterまたは平均周期/包絡が大きく変わる。
+- `PERIOD_MULTIPLIED`：規則的な交互振動・サブハーモニクス等を検出。Jitterは定義とイベント選択に依存、注記して掲載。
+- `AMBIGUOUS_PEAKS`：多峰性・検出法A/Bの食い違い・prominence感度などにより同一種類の周期境界が不明。
+- `NO_OSCILLATION`、`INSUFFICIENT_CYCLES`、`RUN_FAILED`、`INPUT_BLOCKED`、`NUMERIC_INVALID`等。
+
+主指標は暫定`N≥10`個の**連続有効周期**と、十分な流量振幅/SNRを必要とする。少なければJitterは`NaN + reason`で記録。**無発振を0%にしない**。1:2の規則的周期倍化は、交互のパルス間隔を使ったlocal Jitterが高くても**それだけで「ランダムゆらぎ」ではない**。周期倍化の検出は自己相関・FFTの半周波数や2周期繰返しで慎重に判断する。
+
+**定常性**：主窓`[0.50,1.00)`を`[0.50,0.75)`と`[0.75,1.00)`に分け、平均周期、`J_local/RAP/PPQ5`、流量RMS/ピーク幅、包絡のドリフトを比較。閾値は事前に`analysis_config.json`で固定し、実際の判定率とflagを報告。主窓が非定常なら主図に斜線／マーカー変更などで区別し、勝手に0.75–1.0に窓を切り替えて本値を差し替えない。
+
+**感度検査**：Aのprominence 5/10/15%、peak時刻補間ON/OFF、ピーク候補A/B、主窓と半窓、平滑化なし／必要なときの対照を比較し、相対変化・周期数・ランキングがどの程度安定か記録。既存1sデータで終える。**解析結果が都合のよいような条件別手法変更は不可**。
+
+## 5. 36runの生成・実行管理
+
+**本体を改造しない。** 既存`src/simulation/readParams.cpp`は`leftFrequencyFile/rightFrequencyFile/leftModeFile/rightModeFile/leftSurfaceNasFile/rightSurfaceNasFile`を受け付ける。過去の`tools/run_right_stiffness_sweep.py`は**整数Body値、従来`M5_test`と`.vtu`前提**で今回にはそのまま使えない。旧ツールは破壊せず新しい実装で`p`表記とVTK変換後の入力を扱う。
+
+推奨新設ディレクトリ：`tools/body_ratio_jitter_261103/`。
+- `inventory_modes.py`：小数BodyトークンをDecimalでparse、右18対のtxt/vtk照合・hash・nModes・点順・freq順・Cover/幾何チェック。
+- `convert_modes.py`：必要な場合だけ`.vtk`→`.vtu`準備と`.txt`の正規化、変換前後のモード値・周波数の検算。
+- `prepare_sweep.py`：完成済み12/6条件のparamを正とし、`Ps=900/1400`、`nstep=100000`、右Body入力だけを変更した**36独立`param.txt`**を新規生成。`--dry-run`を標準動作にする。相対パスは生成param移動により壊れるので必要なfreq/mode/NASを絶対パス化。`input/param.txt`原本に書き込まない。
+- `run_sweep.py`：`--execute`をユーザー指定でのみ受け取り実行、`--resume`、`--threads`、`--fail-fast`、`--pressures 900 1400`。条件別runディレクトリの`SIMULATION_RUN_DIR`と保存先独立性を実際に確認してから実行。
+- `analyze_flow_jitter.py`：`Ug`のA/Bイベント検出、subsample、`local/RAP/PPQ5/CV`、ピークQC、主窓・半窓・感度、図・生周期CSV。
+- `plot_jitter_sweep.py`：全36条件集計、900と1400の同一x軸への表示、QC理由の表示、手法別指標の比較図、代表`Ug`波形、圧力差`ΔJ=J_1400−J_900`の比較（**共通有効剛性比だけ**）。
+
+**実行前チェック**：完成・再利用条件は`ratio,Ps,nstep,dt,full physics config hash,left/right raw input hashes,converted hashes,solver hash,analysis method version,expected output`が一致する場合のみ。既存`0.5s`のrunや別COMSOL入力の`r=0.5`を**1s新系列として流用しない**。
+
+**ディレクトリ例**：
+~~~text
+analysis_runs/jitter_body_ratio_261103_900_1400_1s/
+  mode_inventory.csv
+  conversion_manifest.json
+  analysis_config.json
+  cases_manifest.csv
+  cases/
+    r0p10_P900/
+      input/param.txt
+      dat/airflow_vt.dat
+      txt/params_used.txt
+      txt/manifest.txt
+      jitter_metrics.json
+      flow_peaks.csv
+      flow_cycles.csv
+      status.json
+      stdout.log
+      stderr.log
+    r0p10_P1400/
+      ...
+  jitter_summary.csv
+  jitter_method_comparison.csv
+  jitter_sensitivity.csv
+  figures/
+    jitter_vs_ratio_900_1400.png
+    jitter_vs_ratio_900_1400.svg
+    jitter_method_comparison.png
+    jitter_qc.png
+    flow_peak_examples.png
+    pressure_difference.png
+  preflight_report.md
+  report.md
+~~~
+
+`status.json`は`not_started/running/completed/analysis_failed/input_blocked/run_failed/jitter_invalid`等の状態とコード、理由、入力hash、計算時間を保持。**ソルバ完走`completed`と有効なJitter`VALID_STATIONARY`は別の判定**。進捗が中断しても**既存runを消さず再開**。生VTKや大容量VTU、波形の全コピーをGitへ加えない。
+
+## 6. メイングラフと結果の解釈
+
+### 図1：必須の主図
+
+`figures/jitter_vs_ratio_900_1400.png`/`.svg`：
+- x`=E_B,R/E_B,L`＝`0.10..0.95`、数値軸、tickは意味のある位置`0.1,0.2,...,1.0`等。
+- y`=Flow Jitter_local [%]`。**900 Paと1400 Paを2系列**で同じ図へ（色だけでなくマーカー/線種も変える）。値のない点は0として線で結ばない。曲線は**隣接するQC合格点に限り**連結し、欠測で区間を橋渡ししない。
+- `VALID_WINDOW_DEPENDENT`や`PERIOD_MULTIPLIED`は通常と違うマーカーにして、定常Jitterと混同しない。`AMBIGUOUS_PEAKS/NO_OSCILLATION`等は別のQC帯・テーブルに配置し、意味のないy=0表示を避ける。
+- **主図の主系列はUg–local(A,補間ON/主設定)で固定**。複数のJitter定義を同じ主図の900/1400各曲線に混ぜない。解析手法を変えた比較は別図。
+- `r=1.0`参考点は各Psで同条件1sの既存runがある場合のみ注記付きで追加（原則36点の外）。
+
+### 図2：周期ゆらぎ指標の比較
+
+`jitter_method_comparison.png`：
+- 900/1400ごとに`J_local`、`RAP`、`PPQ5`を同じ`Ug`の**同じ有効パルス列**で算出して比較。**値の尺度が指標間で異なるので絶対的同値は期待しない**。剛性比に対する傾向、ピーク位置、順位・相関、検出法差、`N cycles`を評価。
+- 補助で`CV_T`、subsample ON/OFF、流量検出法A/B、参考の面積/音圧からの周期検証を提示。**他信号の値を流量Jitterの平均に混入しない**。
+
+### 図3～5：品質・代表波形・圧力差
+
+- `jitter_qc.png`：両圧力、valid cycle count、各種flag、窓安定性、prominence感度、整数sample vs補間で差が大きい箇所。
+- `flow_peak_examples.png`：900/1400の低/高Jitter、周期倍化/多峰/不合格条件があれば代表波形（mL/sへの表示換算：`1 m³/s=10^6 mL/s`）、ピーク時刻・`T_i`が追跡できるように。
+- `pressure_difference.png`：同一`r`で有効な`J_1400−J_900`。**一方が無効な点は空欄**。平均差・分布・どこで圧力依存が強いかを分析。両曲線の交差をデータのない区間へ外挿しない。
+
+### レポートの主題
+
+- 剛性比によってJitterが単調増減するか、局所的な増大域があるか。**急変点の前後は波形/ピーク抽出が妥当か**。
+- 900 Paと1400 PaでJitterの変化が違うか。同じ比で圧力上昇が周期ゆらぎを増すか減らすか。**圧力を変えたことで発振状態自体が変わる可能性**。
+- 複数方法で傾向が共通しているか。`local`だけ異常に大きいならダブルピーク/周期倍化/イベント抽出の影響を検討。
+- これまでの12/6・900Paの**振幅左右比0.302**と、今回の流量Jitterは異なる指標。局所振幅非対称≠Jitter大とする。音響学的な声質劣化の定量的保証とも言わない。
+- 36ケースの数値が得られるまで**どの剛性比が最大Jitterになるかを予言したり、架空のスムーズな曲線を描いたりしない**。
+
+## 7. 実行順序（無駄な36本を避ける）
+
+**Phase 0：実行なし・Preflight**
+1. 作業ツリー/既存run保全、入力36条件のリストと新固有データ18種の厳格検査。
+2. モード変換の必要性判定、20モード・周波数順・幾何の照合。
+3. 参照`L12_R6_P900`から物理設定を確定し、`Ps`と`nstep`以外の差を右freq/modeに限定。全36個のparamを生成し、差分を表にする。
+4. Jitter解析器の合成波形テストを実行。`preflight_report.md`で全ゲートを`PASS`としてから本番へ。
+
+**Phase 1：代表条件で波形QC**
+1. `r=0.50`の900 Paと1400 Paを代表として**各1秒**のrun、`Ug`ピーク/周期/主窓/前後半比較を可視化。**この2本は36本の内数**。
+2. もしpressure 1400 Paで別物理式・モード出力の不適合・数値異常・発散が生じたら、残りを自動実行せず原因と入力差分を報告。
+3. `r=0.10`と`0.95`の入力の**読み込み動作確認**。初期化だけでよい場合はフルrunに数えない。確認済み条件以外のフルrunを無条件に走らせない。
+4. 主ピーク手順を固定し`analysis_config.json`に保存。主指標は`Ug` Local jitter、その他手法の感度比較は副次。
+
+**Phase 2：残り34本**
+- Phase1がPASSなら全36点を**同じ物理設定・同じ方法**で順次実行。大量並列の競合を避ける。`OMP_NUM_THREADS`／`OMP_PROC_BIND`／`OMP_PLACES`を固定、CPU/メモリ/ディスク上限を確認。途中resume可。
+- `SIMULATION_RUN_DIR`で出力をケースごとに隔離し、`output/`、`result/`、`input/`、過去`analysis_runs/`を改変しない。`stdout/stderr`、`params_used.txt`、`manifest`、実行結果`status`を残す。
+- 完走したrunから順次`Ug`を解析し、明白なピーク誤認や数値異常が出たら**追加runを止める**。見かけの`Jitter=0`で穴を埋めない。
+
+**Phase 3：図と論文向けの評価**
+- 36条件の`jitter_summary.csv`、local/RAP/PPQ5/CV/A-B差の`jitter_method_comparison.csv`、感度、周期表を作る。
+- 900/1400の2曲線主図、Jitter手法比較、代表Ug波形、QC、圧力差を図にまとめる。
+- `report.md`に、定義・計算条件・有効ケース数、各系列の最大/最小、ピーク検出の妥当性、比率と圧力による変化、未確定な機構を記録する。
+- 急変域などがあれば追加精細化は**提案のみ**。今回の36本以外を勝手に計算しない。
+
+## 8. テストと品質ゲート（必須）
+
+**ファイルパーサ**
+- `b1p2c3→1.2`、`b11p4c3→11.4`、`b10p8c3→10.8`、`b12c3→12`。不正`p`、異なる`c`、重複`b3c3/b3p0c3`、別モデル名の衝突を検出。
+- 18種のfreqとmodeを一意対応。計36ケース。**同名の頻度txtを複数モデルで使い回さない**。両圧力で右モードファイルhashが同一、左12が全条件で同一。
+
+**VTK/固有モード**
+- legacy/XML判定、20以上の周波数とXYZモード、座標・節点順・幾何、元/変換後の一致。
+- DataArray名の`Hz`と周波数txt20行のmode対応。近接固有値・重複キーは不明なら`MODE_ORDER_AMBIGUOUS`で止める。
+
+**設定**
+- `dt=1e−5`、`nstep=100000`、各独立run`1s`、`Ps∈{900,1400}`、`r`は18種のexact decimal。
+- 圧力系列間の差は`Ps`のみ。剛性比条件間の差は**右周波数+右モード**のみ。既存12/6の参照設定（Cover3/3、ランプ、減衰、接触、管路等）と照合。出力専用オプションを切った場合は別途記録。
+- 同じ条件とソルバhashならresume可、他条件を「完了」と誤認しない。
+
+**UgとJitter**
+- 1列目はstep、`n%5==0`を検証。m³/s→mL/sの換算と時間軸。
+- 合成一定周期`J_local/RAP/PPQ5≈0`、period交互例、単調drift、多峰波形、ピーク欠落、無振動、スケール違い、NaN、短い窓。
+- RAP/PPQ5の端点計算、必要周期数、窓左閉右開、subsample補間の有効性、全36点同一prominence/判定基準。
+- 検出法A/Bは別の周期候補を**無理に合流しない**。A/Bが異なるなら波形・周期数を見せ、`AMBIGUOUS_PEAKS`を出す。
+- メイングラフは**2圧力系列、流量Jitter localのみ**。全18比率について成功・失敗が表に残る。
+
+## 9. 想定コマンド（ローカルの実ファイルを確認して最終確定する）
 
 ~~~bash
-# まず新しい固有データだけを検証。まだ計算しない。
+# まず新COMSOL入力の完全な実在確認
 python tools/body_ratio_jitter_261103/inventory_modes.py \
   --source-dir input/m5test/261103 \
   --left-body-kpa 12 --ratios 0.10:0.95:0.05 \
-  --output-dir analysis_runs/jitter_body_ratio_261103_900Pa/inventory
+  --output-dir analysis_runs/jitter_body_ratio_261103_900_1400_1s/inventory
 
-# 固定900Pa・18条件の入力を新規生成（dry-run）
+# 36条件を準備（dry-runでソルバは起動させない）
 python tools/body_ratio_jitter_261103/prepare_sweep.py \
-  --inventory analysis_runs/jitter_body_ratio_261103_900Pa/inventory/mode_inventory.csv \
+  --inventory analysis_runs/jitter_body_ratio_261103_900_1400_1s/inventory/mode_inventory.csv \
   --base-run analysis_runs/12conditions_20261026_ZivIsl/cases/L12_R6_P900 \
-  --pressures 900 --dry-run \
-  --sweep-dir analysis_runs/jitter_body_ratio_261103_900Pa
+  --pressures 900 1400 --duration 1.0 --dry-run \
+  --sweep-dir analysis_runs/jitter_body_ratio_261103_900_1400_1s
 
-# 実行は上記の入力整合とテストをPASS後、まず代表1条件でUg Jitter QC。
-# 問題なければ同一固定ルールで残り18条件を順に処理。
+# 読込と合成流量Jitterテストが通ってから、代表2条件→残り34条件
 python tools/body_ratio_jitter_261103/run_sweep.py \
-  --sweep-dir analysis_runs/jitter_body_ratio_261103_900Pa \
-  --pressures 900 --execute --resume --threads 4
+  --sweep-dir analysis_runs/jitter_body_ratio_261103_900_1400_1s \
+  --pressures 900 1400 --execute --resume --threads 4
 
-# 条件横断集計／プロット
+# 流量Jitter方法比較、QC、900/1400の主図
 python tools/body_ratio_jitter_261103/plot_jitter_sweep.py \
-  --sweep-dir analysis_runs/jitter_body_ratio_261103_900Pa
+  --sweep-dir analysis_runs/jitter_body_ratio_261103_900_1400_1s
 ~~~
 
-**注意**：コマンドはインターフェース仕様例であり、**現時点ではプログラムは存在しない**。`--source-dir`は実際の大小文字に合わせる。**原則として先にdry-run/データ照合を終えてから重い計算**。別圧力実行は`--pressures 900 1400 1900`等を**ユーザーが明示したときのみ**行う。
+これらは**完成後のCLI仕様例**。フォルダの実際の大小文字を調査し、依存関係・実行バイナリを確認してCodexが具体的コマンドを確定する。**各runを実行するかどうかは入力ゲートで制御**し、dry-runで書かれた未検証パラメータを実計算に回さない。
 
-## 6. 実行順序・停止条件・コスト管理
+## 10. Codexへの最終依頼・完了条件
 
-**Phase 0: Preflight（実行0）**
-- Git/入力inventory・本体`modedata.cpp`の読取互換・周波数／Mode順／Geometry・設定比較・旧runの状態を`preflight_report.md`に記録。
-- 新モード変換が必要ならそのコードと検証を完了。
-- 計画18条件を一覧化し、ratio→`b`値→周波数txt/モードvtk→変換後VTU→生成paramのマッピングが**完全1対1**であることを確認。
-- **1つでも`INPUT_BLOCKED`なら全件一括実行に進まない**。ユーザーが追加したデータに欠損がある場合、その場で欠損一覧を報告する。
-
-**Phase 1: 最小動作確認**
-- テストで合成`Ug`波形（一定周期Jitter≈0、意図的周期交替、周波数ドリフト、多峰パルス、欠落ピーク、無振動、丸め誤差）を検証。
-- 必要なら`--dry-run`のパラメータを使った**短いsmoke**で初期化・出力を検査するが、本体の接触計算/流体の式を変更しない。代表`r=0.10,0.50,0.95`の入力読込が検査できればよい。
-- **1条件だけフル`0.50s`計算**（例えば`r=0.50`）。`Ug`ピーク検出を可視化し、主窓の周期抽出・過去の12/6の基本的な波形傾向との一致を確認。ただし新旧モードSHAが異なる場合はbit一致を期待しない。
-- スモーク短縮runのJitterを本番Jitterとして混ぜない。
-
-**Phase 2: 900Pa・18条件**
-- Phase1が`PASS`なら、すべて**独立初期条件・同一圧力立上げ**で順番に本番計算。失敗時にはログ・停止step・原因を保存し、**隣の剛性値のデータを代入しない**。
-- 先に全18本を走らせるのではなく、実行済みケースから順次`Ug`と図・QCを検査。重大なピーク解釈・入力形式の不備があれば**残りを中止**して修正。
-- 質量や剛性に依存して出現する大きな動揺、接触異常、幾何のAP順序反転、`NaN`等は記録し、計算が最後まで走っただけで`VALID_JITTER`にしない。
-- 最後まで`r`の18点をすべて一覧に残し、`VALID_JITTER / INVALID_JITTER / NO_OSCILLATION / RUN_FAILED`を統一管理。
-
-**Phase 3: 解析・解釈**
-- 主図・QC図・代表`Ug`波形・周期系列・感度図・集計CSV・レポートを作成。
-- **中心的な問い**：剛性比に対し`Jitter`は単調か／極大や急変があるか／低剛性比で多峰・周期倍化・非定常が多いか。**現象が見つかった条件だけ**次段の精細化やPs拡張を提案する（今回自動実行しない）。
-- 既存12/6の局所振幅差と新スイープのJitterを関連づける場合、**異なる固有データ／実行条件／波形期間の混同を避ける**。
-
-## 7. テスト・QCの明示要件
-
-- **ファイル名**：小数`1.2`,`11.4`,整数`3`等を正確にparseし、`b12`との混同なし。重複/欠損にfail closed。
-- **VTK/モード**：各ケース3成分、少なくとも20モード、入力周波数列との同順一致、節点数/点順・軸順・幾何整合、有限値、変換前後一致。`.vtk`を単に`.vtu`へrenameするテストは**失敗する**こと。
-- **設定**：左入力と音響/接触/時間/初期化条件は18条件で不変。差は右固有データとメタのみ。`Ps`だけは別系列として変化可能、同圧力系列内で固定。
-- **波形読取**：`#`コメント/step→s/stride=5/単位`m³/s`、部分run、重複step、NaN、時間軸切れ、ゼロ流量を検出。
-- **Jitter数値**：既知のpeak時刻`t_k`から公式が厳密に合う、一定周期≈0（サンプリング補間誤差と区別）、周期交替に高Jitter、欠落ピーク/多峰条件にQCフラグ、最低周期数未満はNaN/invalid、閾値感度・窓依存・サブサンプル比較。
-- **再現性**：同一`Ug`を繰返し解析して全CSV数値・図が再現可能、設定JSONと入力SHA固定、スクリプトseed固定（使用する場合）。未測定条件のJitterを0や内挿で埋めない。
-- **中止ゲート**：参照run基準が未確定、Cover不一致、左12のファイル不足、入力VTKが正しく読めない、モード周波数不一致、run出力の上書き危険、Jitterピークイベントが物理的に解釈不能、ディスク不足はそれぞれ失敗ステータスとして計算を止める。
-- 現在のC++の既知`input_file_params`テストの陳腐化が残っている場合、**本件と無関係な改修で解消しようとしない**。新規のPythonファイル名/解析テストを優先。
-
-## 8. 成果物（新`analysis_runs/jitter_body_ratio_261103_.../`内）
-
-| 成果物 | 中身 |
-|---|---|
-| `mode_inventory.csv` | 18組のBody剛性、ratio、txt/vtk実ファイル、フォーマット・shape・hash・対応QC |
-| `conversion_manifest.json` | Legacy VTK等を変換した場合のlossless検査・入出力SHA・配列/点順 |
-| `run_config.json` / `cases_manifest.csv` | 参照12/6の条件、左右入力、各ケースのparams、全固定条件・実行ファイルSHA |
-| `cases/rXX_P900/{input,dat,csv,txt,...}` | 1条件1フォルダ、生成param、流量ほか元の通常出力、`stdout.log`・`stderr.log`・`status.json` |
-| `jitter_summary.csv` | 全18条件のratio/Body/Ps、`Jitter_local_percent`、補助`Jitter_5period`、周期数・周期CV・定常性・peak QC・状態・失敗理由 |
-| `flow_peaks.csv` / `flow_cycle_metrics.csv` | 条件・流量極大時刻・ピーク属性・個別周期・隣接周期変動・採否 |
-| `jitter_sensitivity.csv` | prominence・補間有無・評価窓を変えたときの指標の変化、QC |
-| `jitter_vs_body_ratio.png/svg` | **主成果：x剛性比、y流量Jitter[%]**。18条件とQC、任意の一致確認済み対称参照 |
-| `jitter_qc_and_cycles.png` | 周期数、周期CV、QCステータス |
-| `flow_examples.png` | 代表3〜4条件の`Ug`流量波形・検出ピーク・周期 |
-| `jitter_sensitivity.png` | 前後半・補間・閾値変化に対する頑健性 |
-| `preflight_report.md` / `report.md` | 実装上の対応と入力ゲート／主結果、失敗理由、数値を伴う解釈・限界、次に調べる剛性比領域 |
-
-**Markdownレポート`report.md`の必須構成**：
-1. **結論（3～5行）**：何圧で何条件を計算し、どの剛性比で`Ug` Jitterが上昇/低下したか（**実測した値のみ**）。単調性がない場合はその事実。
-2. **方法**：独立定圧、左12kPa固定、右18種、新モードデータの読取/変換、`Ug`ピーク検出基準、定義、評価窓、各種QC。
-3. **結果**：全18条件表（Jitter[%]、N cycles、期間、period CV、peak QC、fail状況）、図の読み方と代表波形の特徴。
-4. **頑健性**：閾値/補間/時間窓での変化と不安定条件。期間不足・非定常条件を数値で明示。
-5. **解釈と限界**：「高Jitter」は周期ゆらぎの指標。周期倍化や多峰性・ピーク誤認・圧力立上げ・時間刻み・COMSOLモード固有データ違いを区別し、**カオスの確定とは書かない**。
-6. **次に絞る領域**：急増条件の近くの比率/圧力の再計算、長時間評価、別周期検出法、初期値依存の提案を**今回実行せず**示す。
-
-## 9. 実装・実行時の作法
-
-- `AGENTS.md`のC++17,`icpx`+OpenMP、OpenMP配置固定、`-ffast-math`禁止を守る。**本調査ではC++の物理式は原則無変更**。
-- `input/m5test/261103`のファイルは読み取り専用。VTK→VTUや周波数正規化は**別staging**。大容量固有モードや生run、生成VTUをgit add/commitしない。
-- 18条件の定常圧力系列だけでも計算量は大きい。**並列18本起動を避け、原則1本ずつ**計算。`OMP_NUM_THREADS,OMP_PROC_BIND,OMP_PLACES`とCPU・ディスク・メモリの状態を保存。
-- `--dry-run`では本当にソルバを起動しない。`--execute`は明示時だけ。`--resume`は入力/実行バイナリhashの完全照合が条件。中途半端なrunを`completed`にしない。ソルバが`output/`を使う可能性があるので、`SIMULATION_RUN_DIR`等の既存分離機構を必ず使用。
-- **解析中にピーク検出ルールを都合よく比率ごとに変えない**。探索用設定と最終報告の主設定を分け、主設定の事前定義を`manifest`に記録する。
-- コードの変更ファイルと検証コマンドをまとめ、`git diff --stat`を報告。**Codexはユーザーの許可なくcommit/pushしない**。
-- 0.10–0.95全18条件で入力が見つからないなどの問題が生じたら、**計算をしない状態でも`preflight_report.md`と欠損一覧・解決案を残す**。品質不明の点を補って「完成図」とは呼ばない。
-
-## 10. Codexへの最終依頼・完了判定
-
-**依頼**：ローカル`simulation-main`の`input/m5test/261103`内の新固有周波数txt・固有モードvtkを実際に確認し、左Body12kPa固定、右Body比0.10～0.95を0.05刻みとする18条件で、既存3D自励声帯振動ソルバの流量`Ug`を計算してください。まず**Ps=900 Pa**を従来の完成runと同じ条件で固定し、独立runを安全に構築し、ピーク検出QCに合格した`Ug`波形から`Jitter_local[%]`を算出して、剛性比 vs Jitterの図、全条件CSV、代表波形と周期テーブル、感度/QC図、研究的考察を作ってください。実データがLegacy VTKなら検証付きで変換してください。既存run/入力やC++モデル式は変更しないでください。1400/1900 Paなど追加圧力の全条件実行は、実行前にユーザーへ確認してください。
+**実際の`simulation-main/input/m5test/261103`にある新しい固有データ（`b1p2c3`が1.2 kPaである`p`小数表記）を取り込み、左Body12/右1.2–11.4kPaの18点について、`Ps=900Pa,1400Pa`で各`1秒`、計`36条件`の自己振動計算を行ってください。前に完成した12/6モデルの物理条件を基準とし、COMSOLモードと周波数を厳密に対応づけてください。主結果は`Ug`ピーク周期からの`Jitter_local [%]`を横軸`E_B,R/E_B,L`で2圧力系列に描き、`Ug`由来のRAP・PPQ5・周期CV・別イベント検出法・前後半比較で信頼性を検証してください。欠損入力やQC不合格を補わず、既存runや元入力を上書きせず、全条件の数値表・品質表・図・研究的レポートを完成させてください。**
 
 **完了チェック**：
-- [ ] `input/m5test/261103`の**実物**で18個のratioをtxt+vtk対応・Body/Cover/節点/20モード/周波数整合まで検証した。
-- [ ] 左Body12kPa・Cover3/3・その他固定条件を完成済み900Paケースと照合した。`param.txt`原本を編集していない。
-- [ ] `.vtk`形式と現行`loadFromVTU`の互換性を確認し、必要な場合だけlossless変換した。
-- [ ] 少なくとも1条件で`Ug`流量のピーク時刻・周期・`Jitter_local`計算を検証した。
-- [ ] 全18条件は個別manifest/hash/status付きでrunし、終了した各runの`dat/airflow_vt.dat`を読んだ。未完了/失敗も集計に残した。
-- [ ] 主図のx軸は`E_B,R/E_B,L`、y軸は**`Ug`から計算した`Jitter_local [%]`**。無発振や不確実な周期を0にしていない。
-- [ ] 時間窓依存・prominence依存・サンプリング補間依存を検証し、周期倍化と非周期性を混同していない。
-- [ ] `jitter_summary.csv`、検出周期表、PNG/SVG、`preflight_report.md`、`report.md`を作り、数値をもとにどの剛性比で周期ゆらぎが増えるかを報告した。
-- [ ] 元`output/`、`result/`、既存`analysis_runs/`、`input/m5test/261103`は非改変。ソルバ式変更0、無断commit/push 0。
-
-**未確定として明記するもの**：実際の`261103`内の名前とVTKのファイル形式、Cover値、左Body12入力の場所、今回の対象声門下圧の拡張範囲。これらの資料はローカル環境で確認し、**実物が示さない事実を作らない**。
+- [ ] `b1p2c3`など小数命名の実ファイル18ペアに正しいBody値を割当、Cover=3、20モード、NAS/幾何・Hz順・VK/VTU互換を検証。
+- [ ] 36条件は`18 ratio × 900/1400Pa`、各`dt=1e−5`・`nstep=100000`・1.00 s、ランプ/接触/減衰/流体系は同一設定。
+- [ ] 実行前に参照12/6の正しい条件を確認、param原本・新VTK原本・旧runは非改変。
+- [ ] `Ug`から有効パルスを検出してlocal/RAP/PPQ5/CV、subsample ON/OFF、検出法A/B、定常性・ピークQCを全条件で統一。
+- [ ] **主窓`[0.50,1.00)`、半窓`[0.50,0.75)`・`[0.75,1.00)`を厳守**。旧0.5sの主窓を流用していない。
+- [ ] x=Body剛性比、y=流量Jitter_local[%]の主図に**900/1400Paの2系列**。失敗点・無発振は0%で埋めない。
+- [ ] `mode_inventory.csv`18行、`cases_manifest.csv`36行、`jitter_summary.csv`36行、`jitter_method_comparison.csv`、`flow_cycles.csv`、図・`preflight_report.md`・`report.md`を保存。
+- [ ] 追加物理条件・圧力・計算時間の無断拡張なし、既存入力/出力の上書きなし、C++物理式変更なし、巨大runのGitコミットなし。
