@@ -167,7 +167,7 @@ J_{\mathrm{local}}[\%]
 | `sampling_comparison.csv` | 1stepがある場合のみ（なければ`NOT_AVAILABLE`） |
 | `flow_overview.png` | `Ug`全窓とイベント位置・評価区間。静止～ランプ部分もあれば区別 |
 | **`flow_events_zoom.png`** | **人間が視認できる数周期（例50ms）を拡大し、採用ピーク番号・周期`T_i`・棄却候補を描く**。これが最も重要なQC図 |
-| `autocorrelation_period_candidates.png` | ACF, `T0/2/T0/2?`の検討ではなく**`T0/2,T0,2T0`**を候補として示す。対応するHzと強度 |
+| `autocorrelation_period_candidates.png` | ACFのピークと基本周期候補 `T0/2`, `T0`, `2T0` を、対応周波数・強度とともに示す |
 | `cepstrum_example.png` | **ケプストラム・背景回帰線・CPPの高さ・ピーク`q`/`f`** |
 | `cpp_frames.png` | 時間フレームごとのCPPとピーク周波数。定常性 |
 | `threshold_sensitivity.png` | 閾値変化による周期数/Jitter/RAP/PPQ5・QC |
