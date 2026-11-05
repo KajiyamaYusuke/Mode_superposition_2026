@@ -278,3 +278,145 @@ python tools/analyze_airflow_metrics.py --self-test
 - [ ] `--self-test`がPASSし、既存ソース・入力/出力・未コミット変更を保全。新しい本体ソース/依存/作業残骸を散らさない。
 
 **Codexへの最終指示**：上記を実装し、対称の`.dat`1件で実際の4指標と信頼性を検証する。現時点で具体的なローカル対称流量パスが指定されていなければ、それを決め打ちせず**スクリプト・合成テスト・実行例まで仕上げる**。特に検出イベントを可視化し、**Jitterの値だけでなく「どの周期から求めたか」「その値をどこまで信用できるか」を必ず数値と図で残す**。
+
+
+---
+
+## 11. 2026-11-05 追加決定：CPP・多峰イベント追跡の**確定実装仕様**（本節を優先）
+
+**実装者へ：本節の数値・式・採否規則は現在のデフォルト仕様として確定する。** 前節にある例示値や未決定箇所が本節と食い違う場合は**本節を優先**。すべて`tools/analyze_airflow_metrics.py`の`CPP_CONFIG`と`TRACKING_CONFIG`に一元定義し、実行時の`summary.json`へ設定丸ごと保存する。**閾値は声門流量シミュレーションに対する実装初期値であり、臨床的な正常/異常判定基準ではない**。目視と合成テストで事後妥当性を別評価するが、結果が都合よくなるよう1条件だけ閾値を変更しない。
+
+### 11.1 CPPの完全固定アルゴリズム
+
+**目的**：入力流量から`flow_CPP_dB`を算出。単位は[dB]。これは**フレームCPPの平均**であり、**CPPSではない**。音声ソフトのCPP/CPPSと数値互換とは主張しない。
+
+| パラメータ | 確定値 |
+|---|---|
+| 解析サンプリング周波数 | 10,000 Hz |
+| 解析上限周波数 | 5,000 Hz（10 kHzのNyquist） |
+| frame length | 60 ms = 600サンプル@10kHz |
+| frame hop | 5 ms = 50サンプル |
+| Window | Hann |
+| nfft | 2048（600点の実フレームをゼロパディング。**分解能向上を装わない**） |
+| pitch search | 60–400 Hz |
+| peak quefrency | 2.5–16.6666667 ms |
+| trend-fit quefrency | 1–20 ms |
+| trend fitting | Theil–Sen（`scipy.stats.theilslopes`、縦軸`C_dB`対`q_s`） |
+| time / quefrency smoothing | なし |
+| preemphasis | なし |
+| peak refinement | 3点の放物線補間 |
+| Aggregation | 有効フレームの算術平均、中央値、標準偏差、frame有効数を別途記録 |
+
+**前処理**：入力のstep差から元サンプリング周波数を求め、`fs_raw≥10000Hz`の場合は**`scipy.signal.resample_poly`等の適切なアンチエイリアス低域処理**を含む方法で10kHzへ変換。raw fs=20kHzなら係数1/2、100kHzなら1/10。10kHzと不一致のまま「10kHz」と偽らない。元fsが10kHz未満ならCPP側は`INVALID_SAMPLING_RATE`とし、他の周期指標は処理可能な限り評価。個々のフレームから平均流量を除き、Hannを適用。60ms未満で1フレームも取れなければ`INSUFFICIENT_CPP_FRAMES`。初期ランプがある場合はユーザー指定の解析時間窓だけで計算する。
+
+**数値手順：**
+1. `x[n]`＝各frame平均を差し引いた`Ug`にHannを適用。`X[k]=rfft(x,n=2048)`、`P[k]=|X[k]|²`（DC〜5kHzを含む10kHz標本の片側パワー）。`max(P)≤0`なら該当フレーム`NO_SIGNAL`。
+2. `epsilon_P=1e-12 * max_k(P[k])`、`L[k]=ln(max(P[k],epsilon_P))`。`c[q]=irfft(L,n=2048)`（**逆FFTは実ケプストラム**）。`c²[q]`をパワーケプストラムとする。これはPraatのPowerCepstrumに採用される演算と同系統の定義。
+3. `epsilon_C=1e-12 * max_{q>0}(c[q]²)`、`C_dB[q]=10log10(max(c[q]²,epsilon_C))`。`epsilon_C≤0`なら無効。ケフレンシーは`q_s = q_sample/10000`、正のラグのみ使用。
+4. `1ms≤q≤20ms`の**すべての有効なC_dB点**に`scipy.stats.theilslopes(y=C_dB,x=q_s)`で直線`B(q)=a q+b`をフィット。**回帰をCPPピーク候補ごとに都合よく変えない**。Theil–Senが失敗したframeは無効とし理由を記録。
+5. `2.5ms≤q≤1/60s`で`D[q]=C_dB[q]−B(q)`を作る。**Dの局所最大値のうち最大を与えるピーク**を選ぶ。周波数換算`f_CPP=1/q_peak`。候補が離散端点しかない場合は`CEPSTRAL_PEAK_EDGE`とし、通常のピークと区別。
+6. `D`の最大局所ピークの隣接3点に放物線を当てて`q_peak`と`CPP_frame_dB=D(q_peak)`を推定（補間が不安定なら離散最大とfallbackフラグ）。**ピーク値と背景直線を同じqで評価**。CPPを0にクリップしない。
+7. 有効frameの`CPP_frame_dB`の平均を最終`flow_CPP_dB`とする。frame時間、CPP、ピークq、ピークHz、ピーク順位/第二候補、補間状態、QCを`cpp_frames.csv`へ保存。**ピークqから推定した周波数とACF基準周期からの周波数が20%超異なるframeを`CPP_F0_MISMATCH`でflagするが、CPP値を自動破棄しない**。
+8. `cepstrum_example.png`に**`C_dB`、背景線`B`、探索域、全ピーク候補、採用ピーク、垂直差CPP[dB]**を明示。`cpp_frames.png`でCPP時系列を表示。
+
+**採用定義の明示**：この実装は「`10log10(c²)`上のTheil–Sen背景からの残差ピーク」をCPPと呼ぶ。文献由来の一般原理（対数スペクトル→ケプストラム→背景線との差）を用いるが、前処理、窓、FFT長、平滑化、流量への適用は研究固有。別のCPP/CPPSの数値と比較する前に実装設定を揃える必要がある。
+
+### 11.2 多峰流量波形の周期イベント追跡
+
+**基本原則**：自己相関`T0`は周期**候補**を出すためのもので、Jitterは必ずイベント時刻`t_i`から`T_i=t_{i+1}-t_i`を計算する。`find_peaks`の全局所極大をそのまま周期としない。**周期変動を小さくする方向に時間を修正・スナップしない**。
+
+| パラメータ | 確定値 |
+|---|---|
+| fmin / fmax | 60 / 400 Hz（ACFとイベント検証） |
+| local ACF | 100 ms窓、20 ms hop |
+| 主ピーク`prominence` | 10% × `(P95(Ug)−P5(Ug))`（解析窓の振幅） |
+| threshold sweep | [3,5,8,10,12,15,20]% |
+| candidate peak min distance | `0.20 × T0` |
+| next-event forward/backward search | `[0.65,1.45] × T_ref` |
+| waveform-match segment | イベント前後`±0.40 × T0` |
+| shape match | 平均除去・RMS正規化した同長waveform segmentのPearson相互相関`ρ_j` |
+| score weights | 形状0.85＋prominence類似0.15 |
+| minimum shape correlation | `ρ_j≥0.65` |
+| best vs runner-up margin | `S_best−S_second≥0.10`（次点候補がない場合は差条件免除、他のQC維持） |
+| high-confidence correlation | `ρ_best≥0.85` |
+| adaptive reference period | 最後に**連続して高信頼採用した最大5周期**の中央値`T_ref`。開始時は`T0`。曖昧区間中は推定周期を強制更新しない |
+
+**追跡の厳密な規則**：
+1. `Ug`の解析窓で振幅`P95−P5`を求め、main threshold=10%。`scipy.signal.find_peaks`で全候補を抽出し、候補indexと`prominence_j`を保存。多峰候補も先に消さず`candidate_events.csv`で可視化。
+2. **ACFで`T0/2,T0,2T0`も候補として保持**し、強い倍周期候補があるなら`PITCH_AMBIGUOUS`をflag。解析窓中央近辺で最もprominenceの大きいイベントをanchorとして、時間の前後**両方向**に追跡。anchor選択とACF周期候補の根拠を保存。
+3. 次イベントは`Δt∈[0.65T_ref,1.45T_ref]`内の候補から選ぶ。全候補で同じ長さ`2×0.40T0`のframeをanchor/直前高信頼イベントの周囲から採り、平均除去・RMS正規化、`ρ_j=Pearson(template,candidate_window)`を計算。frame不足/平坦の場合は無効。**候補を基準時刻へ強制移動していないこと**。
+4. 候補ピークprominenceを`p_j=prominence_j/(P95−P5)`として無次元化し、`A_j=exp(-abs(ln((p_j+1e-12)/(p_prev+1e-12))))`とする。`S_j=0.85ρ_j + 0.15A_j`でスコア化。
+5. **採用条件**：`ρ_best≥0.65`、かつ次点候補があれば`S_best−S_second≥0.10`、サンプル重複なし、対応する実イベントが存在。**相関値0.85以上**は`HIGH_CONFIDENCE`候補、`0.65〜0.85未満`は`ACCEPTED_LOW_CONFIDENCE`として別に記録。高信頼期間のみ`T_ref`更新。
+6. `ρ<0.65`または`margin<0.10`は`AMBIGUOUS_MATCH`。候補を無理に確定しない。候補がなければ`MISSING_EVENT_CANDIDATE`。`[0.4,2.5]T_ref`に拡張検索して`2T`や未検出候補を**診断としてだけ**記録し、黙って1周期としてつなげない。周期系列はそこで切断し、別の明確なanchorから再追跡。
+7. **最終的なイベント時刻**は採用した候補のサンプル時刻と、オプション`3点放物線補間`時刻（固定候補IDのまま）を保持。形状スコアの最適な位置へイベント時刻を寄せる「T0へのスナップ」は禁止。数値周期比の大きさだけで削除せず、真の大変動の可能性として`PERIOD_JUMP`とflagする。
+8. **RAP/PPQ5の窓を曖昧区間・tracking segment境界をまたがせない**。区間別のJitter/RAP/PPQ5と全体の集計ルール・分母/採用周期数を必ず記録。主要値は最長の信頼できる連続segmentから算出し、その区間長と全窓追跡率を表示（全窓Jitterを名乗らない）。他segmentの値もCSVに残す。
+9. `flow_events_zoom.png`には候補、採用、除外、複数peak、対応時刻、`T_i`、Jitterに使ったsegmentを表示。`acf_period_candidates.png`には`T0/2,T0,2T0`候補と根拠を表示。**一目見て人間が同じ周期と判断する箇所を、検出器が正しく対応づけるか**確認する。
+
+### 11.3 Jitter追跡信頼性（固定のQC目安）
+
+| 判定 | 初期合格基準 |
+|---|---|
+| 主解析窓の追跡`covered_time_fraction` | ≥90% |
+| 採用イベント相関係数の中央値 | ≥0.85 |
+| 曖昧イベント割合 | ≤5%（分母とカウント法をmetadataに記す） |
+| ACF基準周期とイベント周期中央値の相対差 | ≤15% |
+| 閾値間イベント時刻の対応率 | ≥90%（許容±1 raw sample時刻、補間前ID） |
+| 閾値別Jitterの変動 | 主Jitterに対し差≤0.2 percentage point **または**相対20%以内。複数の有効な閾値間で算出、無効閾値を除外した数を記録 |
+
+**QC_PASSはJitter数値が真に正しいという証明ではない**。上の条件が成立しなくても暫定Jitter/RAP/PPQ5・イベント列・理由は保存。正解がない推定周期数からの`coverage_proxy`を**真の検出率と呼ばない**。手入力の人間の周期イベントを提供された場合のみprecision/recallや時刻誤差で検証。
+
+### 11.4 1ファイルの設定定数（実装へそのまま転記してよい）
+
+~~~python
+CPP_CONFIG = {
+    "target_fs_hz": 10000,
+    "max_frequency_hz": 5000,
+    "frame_sec": 0.060,
+    "hop_sec": 0.005,
+    "window": "hann",
+    "nfft": 2048,
+    "pitch_min_hz": 60,
+    "pitch_max_hz": 400,
+    "spectrum_epsilon_ratio": 1e-12,
+    "cepstrum_epsilon_ratio": 1e-12,
+    "trend_start_sec": 0.001,
+    "trend_end_sec": 0.020,
+    "trend_fit": "theil_sen",
+    "peak_interpolation": "quadratic",
+    "time_smoothing": False,
+    "quefrency_smoothing": False,
+    "preemphasis": False,
+}
+
+TRACKING_CONFIG = {
+    "pitch_min_hz": 60,
+    "pitch_max_hz": 400,
+    "acf_window_sec": 0.100,
+    "acf_hop_sec": 0.020,
+    "primary_prominence_percent": 10,
+    "prominence_sweep_percent": [3, 5, 8, 10, 12, 15, 20],
+    "candidate_min_distance_ratio": 0.20,
+    "search_min_period_ratio": 0.65,
+    "search_max_period_ratio": 1.45,
+    "template_halfwidth_ratio": 0.40,
+    "correlation_weight": 0.85,
+    "prominence_weight": 0.15,
+    "min_correlation": 0.65,
+    "min_score_margin": 0.10,
+    "high_confidence_correlation": 0.85,
+    "reference_period_median_count": 5,
+}
+~~~
+
+### 11.5 完了の追加判定
+
+- [ ] `10kHz / 60ms / 5ms / Hann / nfft2048 / epsilon_P,C / Theil-Sen 1–20ms / 60–400Hz`の**CPP確定実装**が存在し、実波形から`cepstrum_example.png`と`cpp_frames.csv`を出力。
+- [ ] `0.65–1.45T_ref`の多峰候補と`ρ≥0.65, ΔS≥0.10`の**イベント追跡規則がコードと出力metadataに一致**。
+- [ ] 倍周期・欠落は`QC`として保持し、誤検出除外でJitterを小さくする処理なし。
+- [ ] 3,5,8,10,12,15,20%の感度、イベント対応率、補間ON/OFF、サンプル間隔検証、追跡率は1件の対称流量で実際に報告可能。
+- [ ] 各ソルバ入力/出力・既存`tools/jitter.py`は改変せず、新規解析スクリプトは引き続き**単一ファイル**。
+
+**参照資料（アルゴリズムの背景）**：
+- Praat `Spectrum: To PowerCepstrum`： https://praat.org/manual/Spectrum__To_PowerCepstrum.html
+- Praat `PowerCepstrum: Get peak prominence`： https://praat.org/manual/PowerCepstrum__Get_peak_prominence___.html
+- Praat `PointProcess: Get jitter (local)`： https://praat.org/manual/PointProcess__Get_jitter__local____.html
