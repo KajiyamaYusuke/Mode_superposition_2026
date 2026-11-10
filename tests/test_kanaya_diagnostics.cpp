@@ -42,13 +42,13 @@ int main(int argc,char** argv) {
     expect(KanayaDiagnostics::scaledResidual(1e-8,1)>0.99);
     expect(KanayaDiagnostics::scaledResidual(2e-8,1)>1);
     expect(KanayaDiagnostics::scaledResidual(2e-12,0)>1);
-    Simulation s;s.params.nstep=3;s.params.dt=1e-5;s.params.nmode=1;
+    Simulation s;s.params.nstep=4;s.params.dt=1e-5;s.params.nmode=1;
     s.runDir=fs::path(argv[1])/std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     for(int side=0;side<2;++side) {
         auto& g=side==0?s.geomL:s.geomR;auto& st=side==0?s.stateL:s.stateR;auto& md=side==0?s.mdataL:s.mdataR;
         g.nsurfl=g.nsurfz=g.nxsup=3;g.nPoints=9;g.surfp.assign(3,std::vector<int>(3));
         for(int i=0;i<3;++i)for(int j=0;j<3;++j){g.surfp[i][j]=g.points.size();g.points.push_back({double(i),side==0?0.0:2.0,double(j)});}
-        st.initialize(9,1,3,g);st.qf=st.qfdot=st.qfddot=std::vector<double>(1,0);
+        st.initialize(9,1,4,g);st.qf=st.qfdot=st.qfddot=std::vector<double>(1,0);
         md.nModes=1;md.nPoints=9;md.frequencies={100};md.modes.assign(1,std::vector<Displacement>(9));
         for(auto& u:md.modes[0])u.uy=side==0?1:-1;
     }
@@ -56,24 +56,55 @@ int main(int argc,char** argv) {
     for(double a:s.fCalc.harea)expect(std::abs(a-4)<1e-12);
     s.fCalc.applyFluidLoads(0,0); // Establish the real separation/pressure metadata.
     expect(setenv("SIMULATION_KANAYA_DIAGNOSTICS","1",1)==0);
+    expect(setenv("SIMULATION_CONTACT_COMPONENTS","1",1)==0);
     KanayaDiagnostics diag(s);
-    for(int n=0;n<3;++n) {
+    for(int n=0;n<4;++n) {
         diag.beginStep(n,n*s.params.dt);
+        for(int side=0;side<2;++side){auto& fx=side==0?s.fCalc.fxL:s.fCalc.fxR;auto& fy=side==0?s.fCalc.fyL:s.fCalc.fyR;auto& fz=side==0?s.fCalc.fzL:s.fCalc.fzR;
+            for(auto& row:fx)std::fill(row.begin(),row.end(),0);for(auto& row:fy)std::fill(row.begin(),row.end(),0);for(auto& row:fz)std::fill(row.begin(),row.end(),0);}
+        s.fCalc.resetPreviousContactForce();
         const double pressure=n==1?-100:100;
         for(int side=0;side<2;++side){bool left=side==0;double ay=left?-1e-6:1e-6;
             auto& fy=left?s.fCalc.fyL:s.fCalc.fyR;fy[1][1]=pressure*ay;
             KanayaDiagnostics::node(left,1,1,pressure,0,ay,0,0,fy[1][1],0);}
-        diag.afterFluid();s.fCalc.projectLoadsToModes();diag.adoptedContact();
+        diag.afterFluid();
+        KanayaDiagnostics::beginContact(false,1);
+        if(n==0){
+            KanayaDiagnostics::contactComponents(1,0,0,.5,.5,.5,1.,1e-4,.2,0,40,40,1e-6,0,1,false);
+            KanayaDiagnostics::beginContact(false,2);
+        }
+        const double ps=n==0?100:n==1?80:0, pd=n==0?50:n==2?30:0, pt=ps+pd, force=pt*1e-6;
+        if(n<3){
+            const double weight=n==0?.5:n==1?0:1;
+            KanayaDiagnostics::contact(1,.5,1.,1e-4,0,-force,0,force,false);
+            KanayaDiagnostics::contactComponents(1,0,0,weight,weight,.5,1.,1e-4,n==0?.3:n==2?.2:0,ps,pd,pt,1e-6,0,1,false);
+            KanayaDiagnostics::contactComponents(1,0,0,.5,.5,.5,1.,1e-4,.1,10,5,15,1e-6,0,1,true);
+            s.fCalc.prevFdisYL[0][1]=-(1-weight)*force;s.fCalc.prevFdisYR[0][1]=(1-weight)*force;
+            s.fCalc.prevFdisYL[1][1]=-weight*force;s.fCalc.prevFdisYR[1][1]=weight*force;
+            for(int i=0;i<2;++i){s.fCalc.fyL[i][1]+=s.fCalc.prevFdisYL[i][1];s.fCalc.fyR[i][1]+=s.fCalc.prevFdisYR[i][1];}
+        }
+        s.fCalc.projectLoadsToModes();diag.adoptedContact();
         for(int side=0;side<2;++side){auto& st=side==0?s.stateL:s.stateR;auto& g=side==0?s.geomL:s.geomR;auto& md=side==0?s.mdataL:s.mdataR;
             st.qf[0]=.001*(n+1);st.qfdot[0]=.1;
             st.mode2uf(g,md,n+1);}
+        KanayaDiagnostics::beginContact(true,99);
+        KanayaDiagnostics::contactComponents(1,0,0,.5,.5,.5,1.,1e-4,1,1e6,1e6,2e6,1,0,1,false);
         diag.endStep(0,2);s.stateL.uf2u();s.stateR.uf2u();
     }
     diag.finish();
     std::ifstream meta(s.runDir/"kanaya_diagnostic/run_metadata.json");
     std::string json((std::istreambuf_iterator<char>(meta)),{});
-    expect(json.find("\"integrated_intervals\": 2")!=std::string::npos);
+    expect(json.find("\"integrated_intervals\": 3")!=std::string::npos);
     expect(json.find("\"excluded_intervals\": 1")!=std::string::npos);
-    std::cout<<"PASS constant geometry, mirrored +/- pressure, actual nodal/modal work, sign reversal, tolerance rejection, final-only exclusion\n";
+    const fs::path component=s.runDir/"kanaya_diagnostic/contact_component_native.bin";
+    expect(fs::file_size(component)==3*2*1*2*sizeof(double));
+    std::ifstream binary(component,std::ios::binary);std::array<double,12> values{};
+    binary.read(reinterpret_cast<char*>(values.data()),sizeof(values));expect(bool(binary));
+    const std::array<double,12> expected{-1e-4,-5e-5,-1e-4,-5e-5,-8e-5,0,-8e-5,0,0,-3e-5,0,-3e-5};
+    for(int i=0;i<12;++i)expect(std::abs(values[i]-expected[i])<1e-16);
+    std::ifstream componentMeta(s.runDir/"kanaya_diagnostic/contact_component_metadata.json");
+    std::string componentJson((std::istreambuf_iterator<char>(componentMeta)),{});
+    expect(componentJson.find("\"shape\": [3,2,1,2]")!=std::string::npos);
+    std::cout<<"PASS constant geometry, mirrored +/- pressure, actual nodal/modal work, mixed/spring-only/damp-only split, s=0/0.5/1 distribution, final-iterate replacement, excluded/diagnostic-only isolation, sign reversal, tolerance rejection, final-only exclusion\n";
 #endif
 }

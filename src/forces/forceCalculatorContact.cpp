@@ -548,6 +548,9 @@ void ForceCalculator::applyContactLoads(int step, int contactIter, bool diagnost
 #ifdef ENABLE_KANAYA_DIAGNOSTICS
             KanayaDiagnostics::contact(j, xContact, pairZMm, pen,
                                       FxL, FyL, FxR, FyR, excluded);
+            KanayaDiagnostics::contactComponents(
+                j, iL, iR, sL, sR, xContact, pairZMm, pen, penDot,
+                f_spring, f_damp, contact_pressure, area, nx, ny, excluded);
 #endif
 
             if (pen > maxPenetration) {

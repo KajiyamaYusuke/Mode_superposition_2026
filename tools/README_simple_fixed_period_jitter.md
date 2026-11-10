@@ -1,0 +1,18 @@
+# Fixed-period airflow jitter batch
+
+Run from any directory (relative input paths are resolved from the repository root):
+
+```sh
+python tools/simple_fixed_period_jitter.py --manifest configs/jitter_fixed_period_cases_example.csv --out-dir /tmp/jitter_fixed_example
+python tools/simple_fixed_period_jitter.py --case run1:output/dat/airflow_vt.dat --case run2:/path/to/airflow_vt.dat --out-dir /tmp/jitter_direct
+```
+
+The output directory must not exist. The manifest requires unique, filename-safe `case_id` and `flow_path`; optional columns are `area_path`, `stiffness_ratio`, and `pressure_pa`. Blank area paths are allowed. The solver format is integer step and flow in m³/s with a `# ... m^3/s` header. Area files require a `# ... mm^2` or `m^2` header and data columns 2–49 (zero-based); finite values among those 48 sections are reduced to the minimum in mm². Steps must be uniformly spaced; flow and area strides may differ. `dt` is seconds per solver step, not per saved row. No input is modified.
+
+Options: `--start` (default 0.50 s), `--end` (1.00 s, excluded), `--dt` (1e-5 s), `--fmin` (60 Hz), `--fmax` (400 Hz), `--out-dir`, and either `--manifest` or repeated `--case ID:PATH`. Coverage of the entire window is required. Invalid flow or initialization affects only that case. Invalid optional area is recorded in `area_error` and does not change flow results.
+
+A single ACF is computed over at most the first 0.10 s; the strongest positive local ACF peak in the requested frequency range is chosen. ACF candidates are normalized by zero-lag energy. Initial valleys require prominence >= 10% of the initial 4-period P95–P5 amplitude. The first valley and lowest candidates within ±0.35 ACF periods of the next two targets give the anchor and mean two-valley period. Failure yields INIT_FAILED without fallback. The grid is extended backward through the start and never adjusted; edge bins are included.
+
+Peaks are found on the full waveform and assigned to half-open bins. Prominence and both rises from SciPy's prominence bases must each be at least 10% of P95–P5 in a ±1.5-period window. The largest sample value is main (ties: earliest), unlike the older prominence-maximum selector; other accepted peaks are secondary. Each main's branch ends at the next main, or the evaluation end. The last actual descent through 3% or 5% of the absolute main flow, up to the first nonpositive sample or otherwise the observed branch minimum, is linearly interpolated. Missing crossings are never filled. Intervals include every adjacent detected event, including long intervals across missing events. Local jitter, RAP and PPQ5 use the mean of all intervals as denominator; insufficient terms remain empty.
+
+`summary.csv` has two rows per case, metrics, counts, ACF candidates as `lag_s:value`, initialization, flags, and errors. `events.csv` identifies each main and both crossings, with crossing counts. `periods.csv` contains every interval and each adjacent jitter contribution. `bins.csv` contains grid boundaries, secondary times and flags; `BOUNDARY_NEAR_PEAK` means an accepted peak lies within 0.1 period of the boundary and never changes selection. `area_alignment.csv` gives the observed minimum area in each main-to-next-main branch and area minus flow event times. `figures/<case_id>.png` shows the entire window, fixed boundaries (red when flagged), mains and events. `figures/jitter_vs_ratio.png` groups jitter by pressure and threshold when numeric ratios exist. A mean interval differing from the fixed period by over 10% is flagged, without correction. A fixed bin is not proof of one physical cycle; inspect the figures and secondary counts for drift and missed events.

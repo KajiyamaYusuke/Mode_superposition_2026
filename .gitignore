@@ -15,6 +15,7 @@ input/
 *.log
 *.dat
 *.csv
+!configs/jitter_batch_cases.example.csv
 *.png
 *.txt
 !requirements-analysis.txt
